@@ -9,7 +9,7 @@ terraform {
       # IMPORTANT: update this to the exact workspace name you use in your
       # Terraform Cloud / HCP organization. I used "Vault-Deployments" as a
       # placeholder — change it if your workspace has a different name.
-      name = "Vault-Deployments"
+      name = "vault-enterprise"
     }
   }
 
