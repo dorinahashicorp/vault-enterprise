@@ -1,0 +1,10 @@
+# Ignore Terraform runtime files and sensitive state
+.terraform/
+.terraform.lock.hcl
+.terraform.tfstate
+.terraform.tfstate.backup
+*.tfplan
+
+# OS / editor files
+.DS_Store
+.vscode/
