@@ -6,4 +6,5 @@ output "vault_lb_dns_name" {
 output "vault_cli_env" {
   description = "Environment variables to set for vault CLI (example)"
   value       = module.vault_ent.vault_cli_config
+  sensitive   = true
 }

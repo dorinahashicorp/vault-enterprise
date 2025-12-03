@@ -43,4 +43,5 @@ output "vault_load_balancer_dns" {
 output "vault_cli_config" {
   value       = module.vault_ent.vault_cli_config
   description = "Suggested environment variables to configure the Vault CLI"
+  sensitive   = true
 }
