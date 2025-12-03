@@ -76,3 +76,38 @@ variable "resource_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "instance_type" {
+  type        = string
+  description = "EC2 instance type for Vault nodes"
+  default     = "t3.medium"
+}
+
+variable "node_count" {
+  type        = number
+  description = "Number of Vault nodes to deploy (minimum 3 for HA)"
+  default     = 3
+
+  validation {
+    condition     = var.node_count >= 3
+    error_message = "Minimum 3 nodes required for HA Raft cluster."
+  }
+}
+
+variable "vault_version" {
+  type        = string
+  description = "Vault Enterprise version to deploy"
+  default     = "1.17.0"
+}
+
+variable "ssh_cidr_blocks" {
+  type        = list(string)
+  description = "CIDR blocks allowed for SSH access (optional)"
+  default     = []
+}
+
+variable "vault_api_cidr_blocks" {
+  type        = list(string)
+  description = "CIDR blocks allowed for Vault API access"
+  default     = ["0.0.0.0/0"]
+}
