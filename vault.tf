@@ -4,10 +4,8 @@ provider "vault" {
   namespace = "admin"
 
   auth_login {
-    namespace = "admin"
-
-    method = "approle"
     path   = "auth/approle/login"
+    method = "approle"
 
     parameters = {
       role_id   = var.vault_approle_role_id
