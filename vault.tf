@@ -16,9 +16,9 @@ provider "vault" {
   }
 }
 
-# Retrieve Vault secrets from HCP Vault KV
+# Retrieve Vault secrets from HCP Vault KV (v2 format requires /data/)
 data "vault_generic_secret" "vault_secrets" {
-  path = "${var.vault_kv_mount}/${var.vault_kv_path_prefix}"
+  path = "${var.vault_kv_mount}/data/${var.vault_kv_path_prefix}"
 }
 
 # Extract individual secrets for use in the module
