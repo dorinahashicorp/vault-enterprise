@@ -8,6 +8,37 @@ variable "resource_name_prefix" {
   default = "demo-vault"
 }
 
+# Vault Configuration
+variable "vault_addr" {
+  description = "Address of the Vault server (HCP Vault Dedicated)"
+  type        = string
+}
+
+variable "vault_approle_role_id" {
+  description = "AppRole Role ID for Vault authentication"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_approle_secret_id" {
+  description = "AppRole Secret ID for Vault authentication"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_kv_mount" {
+  description = "KV mount name where secrets are stored (e.g., 'kv')"
+  type        = string
+  default     = "kv"
+}
+
+variable "vault_kv_path_prefix" {
+  description = "Path prefix in KV mount (e.g., 'vault')"
+  type        = string
+  default     = "vault"
+}
+
+# Networking Configuration
 variable "net_vpc_id" {
   description = "VPC id to deploy Vault into. If empty, a small demo VPC will be created by the included module."
   type        = string
@@ -30,26 +61,6 @@ variable "vault_seal_awskms_key_arn" {
   description = "AWS KMS key ARN for Vault auto-unseal. If empty, a demo key will be created."
   type        = string
   default     = ""
-}
-
-variable "sm_vault_license_arn" {
-  description = "ARN of the Vault license stored in AWS Secrets Manager. You must add this to the TFC variable set."
-  type        = string
-}
-
-variable "sm_vault_tls_cert_arn" {
-  description = "ARN of the TLS certificate secret in Secrets Manager (cert)."
-  type        = string
-}
-
-variable "sm_vault_tls_cert_key_arn" {
-  description = "ARN of the TLS certificate private key secret in Secrets Manager (key)."
-  type        = string
-}
-
-variable "sm_vault_tls_ca_bundle" {
-  description = "ARN of the CA bundle secret in Secrets Manager (CA chain)."
-  type        = string
 }
 
 variable "vault_fqdn" {

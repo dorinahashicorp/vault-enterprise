@@ -3,7 +3,7 @@ module "vault_ent" {
   version = "0.2.0"
 
   # Networking
-  net_vpc_id        = local.effective_vpc_id
+  net_vpc_id           = local.effective_vpc_id
   net_vault_subnet_ids = local.effective_vault_subnets
   net_lb_subnet_ids    = local.effective_lb_subnets
 
@@ -20,11 +20,11 @@ module "vault_ent" {
   # Auto-unseal KMS key
   vault_seal_awskms_key_arn = local.effective_kms_key_arn
 
-  # Secrets Manager ARNs - these should be populated via Terraform Cloud variable sets
-  sm_vault_license_arn     = var.sm_vault_license_arn
-  sm_vault_tls_cert_arn    = var.sm_vault_tls_cert_arn
-  sm_vault_tls_cert_key_arn = var.sm_vault_tls_cert_key_arn
-  sm_vault_tls_ca_bundle   = var.sm_vault_tls_ca_bundle
+  # Secrets retrieved from HCP Vault via AppRole auth
+  sm_vault_license_arn      = local.vault_license
+  sm_vault_tls_cert_arn     = local.vault_server_cert
+  sm_vault_tls_cert_key_arn = local.vault_server_key
+  sm_vault_tls_ca_bundle    = local.vault_ca_cert
 
   vault_fqdn = var.vault_fqdn
 
@@ -36,11 +36,11 @@ module "vault_ent" {
 }
 
 output "vault_load_balancer_dns" {
-  value = module.vault_ent.vault_load_balancer_name
+  value       = module.vault_ent.vault_load_balancer_name
   description = "DNS name of the Vault load balancer"
 }
 
 output "vault_cli_config" {
-  value = module.vault_ent.vault_cli_config
+  value       = module.vault_ent.vault_cli_config
   description = "Suggested environment variables to configure the Vault CLI"
 }
