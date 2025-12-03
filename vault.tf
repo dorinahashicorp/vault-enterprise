@@ -1,16 +1,13 @@
 # Configure the Vault provider for HCP Vault Dedicated access
+# Uses JWT authentication with HCP Terraform's workload identity tokens
+# HCP Terraform automatically provides the token via TFC_VAULT_TOKEN environment variable
 provider "vault" {
-  address   = var.vault_addr
-  namespace = "admin"
+  skip_child_token = true
+  address          = var.tfc_vault_dynamic_credentials.default.address
+  namespace        = var.tfc_vault_dynamic_credentials.default.namespace
 
-  auth_login {
-    path   = "auth/approle/login"
-    method = "approle"
-
-    parameters = {
-      role_id   = var.vault_approle_role_id
-      secret_id = var.vault_approle_secret_id
-    }
+  auth_login_token_file {
+    filename = var.tfc_vault_dynamic_credentials.default.token_filename
   }
 }
 

@@ -20,7 +20,7 @@ module "vault_ent" {
   # Auto-unseal KMS key
   vault_seal_awskms_key_arn = local.effective_kms_key_arn
 
-  # Secrets retrieved from HCP Vault via AppRole auth
+  # Secrets retrieved from HCP Vault via JWT workload identity auth
   sm_vault_license_arn      = local.vault_license
   sm_vault_tls_cert_arn     = local.vault_server_cert
   sm_vault_tls_cert_key_arn = local.vault_server_key

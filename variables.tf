@@ -3,29 +3,32 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+# Vault Dynamic Credentials Configuration
+# These values are automatically provided by HCP Terraform when TFC_VAULT_* environment variables are set
+variable "tfc_vault_dynamic_credentials" {
+  description = "Object containing Vault dynamic credentials configuration from HCP Terraform"
+  type = object({
+    default = object({
+      token_filename = string
+      address        = string
+      namespace      = string
+      ca_cert_file   = string
+    })
+    aliases = map(object({
+      token_filename = string
+      address        = string
+      namespace      = string
+      ca_cert_file   = string
+    }))
+  })
+}
+
 variable "resource_name_prefix" {
   type    = string
   default = "demo-vault"
 }
 
 # Vault Configuration
-variable "vault_addr" {
-  description = "Address of the Vault server (HCP Vault Dedicated)"
-  type        = string
-}
-
-variable "vault_approle_role_id" {
-  description = "AppRole Role ID for Vault authentication"
-  type        = string
-  sensitive   = true
-}
-
-variable "vault_approle_secret_id" {
-  description = "AppRole Secret ID for Vault authentication"
-  type        = string
-  sensitive   = true
-}
-
 variable "vault_kv_mount" {
   description = "KV mount name where secrets are stored (e.g., 'kv')"
   type        = string
