@@ -1,0 +1,98 @@
+# Vault Enterprise HVD Terraform Variables
+# ==========================================
+#
+# DEPLOYMENT WORKFLOW
+# ===================
+# Step 1: Apply prerequisites.tf to create VPC, KMS, and related infrastructure
+#         cd to workspace directory and run:
+#         terraform apply -var-file=terraform.tfvars
+#
+# Step 2: Create Secrets Manager secrets manually (using AWS CLI or AWS Console)
+#         BEFORE running terraform apply for the main configuration
+#
+#         Example AWS CLI commands:
+#         aws secretsmanager create-secret \
+#           --name vault-license \
+#           --secret-string file://vault.hclic
+#
+#         aws secretsmanager create-secret \
+#           --name vault-tls-cert \
+#           --secret-string file://cert.pem
+#
+#         aws secretsmanager create-secret \
+#           --name vault-tls-key \
+#           --secret-string file://key.pem
+#
+#         aws secretsmanager create-secret \
+#           --name vault-ca-cert \
+#           --secret-string file://ca.pem
+#
+# Step 3: Record the ARNs of the 4 secrets you created and fill in values below
+#
+# Step 4: Run terraform apply to deploy Vault Enterprise
+
+#==============================================================================
+# From Prerequisites Outputs
+#==============================================================================
+# Copy these values from: terraform output -json prerequisites_summary
+
+# VPC and Subnets (created by prerequisites.tf)
+vpc_id = "vpc-xxxxxxxxx"  # Example: vpc-0a1b2c3d4e5f6g7h8
+
+vault_subnet_ids = [
+  "subnet-xxxxxxxxx",  # Private subnet 1 (AZ 0)
+  "subnet-yyyyyyyyy",  # Private subnet 2 (AZ 1)
+  "subnet-zzzzzzzzz"   # Private subnet 3 (AZ 2)
+]
+
+lb_subnet_ids = [
+  "subnet-aaaaaaaaa",  # Public subnet 1 (AZ 0)
+  "subnet-bbbbbbbbb",  # Public subnet 2 (AZ 1)
+  "subnet-ccccccccc"   # Public subnet 3 (AZ 2)
+]
+
+# KMS Key (created by prerequisites.tf)
+kms_key_id = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+
+#==============================================================================
+# Secrets Manager ARNs
+#==============================================================================
+# You must create these 4 secrets in AWS Secrets Manager BEFORE running
+# terraform apply. Use the AWS CLI commands shown above.
+#
+# After creating secrets, record their ARNs and enter them below:
+
+vault_license_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-license-xxxxx"
+vault_tls_cert_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-tls-cert-xxxxx"
+vault_tls_key_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-tls-key-xxxxx"
+vault_ca_cert_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-ca-cert-xxxxx"
+
+#==============================================================================
+# Vault Configuration
+#==============================================================================
+
+friendly_name_prefix = "vault"
+vault_version        = "1.17.0"
+node_count           = 3
+instance_type        = "t3.large"
+vault_fqdn           = "vault.example.com"
+
+#==============================================================================
+# Network Access
+#==============================================================================
+
+# CIDR blocks allowed to access Vault API via load balancer
+ingress_cidr_blocks = ["0.0.0.0/0"]
+
+# CIDR blocks allowed SSH access to Vault instances (empty = disabled)
+ingress_ssh_cidr_blocks = []
+
+#==============================================================================
+# Resource Tags
+#==============================================================================
+
+resource_tags = {
+  Environment = "production"
+  ManagedBy   = "terraform"
+  CostCenter  = "engineering"  # Adjust as needed
+}
