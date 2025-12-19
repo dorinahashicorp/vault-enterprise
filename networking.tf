@@ -16,7 +16,8 @@ module "demo_vpc" {
   public_subnets  = ["10.50.1.0/24", "10.50.2.0/24", "10.50.3.0/24"]
   private_subnets = ["10.50.11.0/24", "10.50.12.0/24", "10.50.13.0/24"]
 
-  enable_nat_gateway   = false
+  enable_nat_gateway   = true
+  single_nat_gateway   = true
   enable_dns_hostnames = true
   enable_dns_support   = true
 }
