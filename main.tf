@@ -5,42 +5,6 @@
 # Validated Design principles without relying on the external module.
 
 #==============================================================================
-# Secrets Manager - Store TLS Certificates (avoids user_data size limits)
-#==============================================================================
-
-resource "aws_secretsmanager_secret" "vault_tls_certs" {
-  name                    = "${var.resource_name_prefix}-vault-tls-certs"
-  description             = "Vault TLS certificates for ${var.resource_name_prefix}"
-  recovery_window_in_days = 0
-
-  tags = merge(var.resource_tags, { Name = "${var.resource_name_prefix}-vault-tls-certs" })
-}
-
-resource "aws_secretsmanager_secret_version" "vault_tls_certs" {
-  secret_id = aws_secretsmanager_secret.vault_tls_certs.id
-  secret_string = jsonencode({
-    server_cert = local.vault_server_cert
-    server_key  = local.vault_server_key
-    ca_cert     = local.vault_ca_cert
-  })
-}
-
-resource "aws_secretsmanager_secret" "vault_license" {
-  name                    = "${var.resource_name_prefix}-vault-license"
-  description             = "Vault Enterprise license for ${var.resource_name_prefix}"
-  recovery_window_in_days = 0
-
-  tags = merge(var.resource_tags, { Name = "${var.resource_name_prefix}-vault-license" })
-}
-
-resource "aws_secretsmanager_secret_version" "vault_license" {
-  secret_id = aws_secretsmanager_secret.vault_license.id
-  secret_string = jsonencode({
-    license = local.vault_license
-  })
-}
-
-#==============================================================================
 # Security Groups
 #==============================================================================
 
@@ -185,28 +149,6 @@ data "aws_iam_policy_document" "vault_policy" {
     ]
     resources = ["*"]
   }
-
-  # Secrets Manager for storing root token
-  statement {
-    actions = [
-      "secretsmanager:CreateSecret",
-      "secretsmanager:UpdateSecret",
-      "secretsmanager:PutSecretValue"
-    ]
-    resources = ["arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.resource_name_prefix}-vault-root-token*"]
-  }
-
-  # Secrets Manager for retrieving TLS certs and license
-  statement {
-    actions = [
-      "secretsmanager:GetSecretValue",
-      "secretsmanager:DescribeSecret"
-    ]
-    resources = [
-      "arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.resource_name_prefix}-vault-tls-certs*",
-      "arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.resource_name_prefix}-vault-license*"
-    ]
-  }
 }
 
 resource "aws_iam_instance_profile" "vault" {
@@ -228,14 +170,16 @@ resource "aws_launch_template" "vault" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
-    vault_fqdn        = var.vault_fqdn
-    kms_key_id        = local.effective_kms_key_arn
-    node_count        = var.node_count
-    vault_version     = var.vault_version
+    vault_fqdn           = var.vault_fqdn
+    kms_key_id           = local.effective_kms_key_arn
+    node_count           = var.node_count
+    vault_version        = var.vault_version
     resource_name_prefix = var.resource_name_prefix
-    aws_region        = var.aws_region
-    tls_secret_name   = aws_secretsmanager_secret.vault_tls_certs.name
-    license_secret_name = aws_secretsmanager_secret.vault_license.name
+    aws_region           = var.aws_region
+    vault_server_cert    = local.vault_server_cert
+    vault_server_key     = local.vault_server_key
+    vault_ca_cert        = local.vault_ca_cert
+    vault_license        = local.vault_license
   }))
 
   vpc_security_group_ids = [aws_security_group.vault_nodes.id]
@@ -296,12 +240,6 @@ resource "aws_autoscaling_group" "vault" {
     id      = aws_launch_template.vault.id
     version = "$Latest"
   }
-
-  # Ensure secrets are created before instances try to retrieve them
-  depends_on = [
-    aws_secretsmanager_secret_version.vault_tls_certs,
-    aws_secretsmanager_secret_version.vault_license
-  ]
 
   tag {
     key                 = "Name"

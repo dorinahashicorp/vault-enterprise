@@ -3,6 +3,12 @@ output "vault_lb_dns_name" {
   value       = aws_lb.vault.dns_name
 }
 
+output "vault_root_token" {
+  description = "Vault root token (sensitive - written to instance /opt/vault/root_token.txt after initialization)"
+  value       = "Root token is stored in /opt/vault/root_token.txt on the Vault instances after initialization completes (5-10 minutes)"
+  sensitive   = false
+}
+
 output "vault_cli_env" {
   description = "Environment variables to set for vault CLI"
   value       = "export VAULT_ADDR=https://${aws_lb.vault.dns_name}:8200\nexport VAULT_NAMESPACE=admin"
