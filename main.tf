@@ -11,7 +11,7 @@
 resource "aws_secretsmanager_secret" "vault_tls_certs" {
   name                    = "${var.resource_name_prefix}-vault-tls-certs"
   description             = "Vault TLS certificates for ${var.resource_name_prefix}"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = merge(var.resource_tags, { Name = "${var.resource_name_prefix}-vault-tls-certs" })
 }
@@ -28,7 +28,7 @@ resource "aws_secretsmanager_secret_version" "vault_tls_certs" {
 resource "aws_secretsmanager_secret" "vault_license" {
   name                    = "${var.resource_name_prefix}-vault-license"
   description             = "Vault Enterprise license for ${var.resource_name_prefix}"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = merge(var.resource_tags, { Name = "${var.resource_name_prefix}-vault-license" })
 }
