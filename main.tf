@@ -297,6 +297,12 @@ resource "aws_autoscaling_group" "vault" {
     version = "$Latest"
   }
 
+  # Ensure secrets are created before instances try to retrieve them
+  depends_on = [
+    aws_secretsmanager_secret_version.vault_tls_certs,
+    aws_secretsmanager_secret_version.vault_license
+  ]
+
   tag {
     key                 = "Name"
     value               = "${var.resource_name_prefix}-vault"
