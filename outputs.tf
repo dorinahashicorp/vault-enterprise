@@ -6,7 +6,7 @@ output "vault_lb_dns_name" {
 output "vault_cli_env" {
   description = "Environment variables to set for vault CLI"
   value       = "export VAULT_ADDR=https://${aws_lb.vault.dns_name}:8200\nexport VAULT_NAMESPACE=admin"
-  sensitive   = true
+  sensitive   = false
 }
 
 output "vault_root_token_secret_name" {
@@ -17,7 +17,7 @@ output "vault_root_token_secret_name" {
 output "vault_retrieve_root_token" {
   description = "Command to retrieve the root token from AWS Secrets Manager"
   value       = "aws secretsmanager get-secret-value --secret-id ${var.resource_name_prefix}-vault-root-token --region ${var.aws_region} --query SecretString --output text | jq -r '.root_token'"
-  sensitive   = true
+  sensitive   = false
 }
 
 output "vault_quick_start_guide" {
