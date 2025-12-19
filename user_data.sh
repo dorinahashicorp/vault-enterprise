@@ -19,6 +19,8 @@ VAULT_LOGS="/var/log/vault"
 KMS_KEY_ID="${kms_key_id}"
 VAULT_FQDN="${vault_fqdn}"
 NODE_COUNT="${node_count}"
+RESOURCE_NAME_PREFIX="${resource_name_prefix}"
+AWS_REGION="${aws_region}"
 
 echo "=== Starting Vault Enterprise installation ==="
 echo "Version: $VAULT_VERSION"
@@ -174,3 +176,127 @@ echo "=== Vault Enterprise installation complete ==="
 echo "Instance: $INSTANCE_ID"
 echo "Private IP: $PRIVATE_IP"
 echo "Availability Zone: $AZ"
+
+# ============================================================================
+# Cluster Initialization (only on first node, with locking mechanism)
+# ============================================================================
+
+echo "=== Checking cluster initialization status ==="
+
+# Wait for Vault to be ready
+VAULT_ADDR="https://localhost:8200"
+export VAULT_SKIP_VERIFY=true
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  if /usr/local/bin/vault status &>/dev/null; then
+    echo "✓ Vault is responding"
+    break
+  fi
+  echo "Waiting for Vault to be ready... ($((RETRY_COUNT + 1))/$MAX_RETRIES)"
+  sleep 2
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+  echo "✗ Vault failed to become ready"
+  exit 1
+fi
+
+# Check if already initialized
+INIT_STATUS=$(/usr/local/bin/vault status -format=json 2>/dev/null | jq -r '.initialized')
+
+if [ "$INIT_STATUS" = "true" ]; then
+  echo "✓ Cluster already initialized"
+else
+  echo "⚠ Cluster not initialized, attempting initialization..."
+  
+  # Use a distributed lock: try to create a marker in /opt/vault/data/.initializing_lock
+  # Only the first node to acquire the lock will initialize
+  LOCK_FILE="$VAULT_DATA/.initializing_lock"
+  INIT_OUTPUT="$VAULT_DATA/init-response.json"
+  
+  # Try to create lock (atomic operation)
+  if mkdir "$VAULT_DATA/.initializing_lock" 2>/dev/null || [ -f "$LOCK_FILE" ]; then
+    # Wait a bit for any potential concurrent initializer
+    sleep 3
+    
+    # Check again if initialized (another node may have done it)
+    INIT_STATUS=$(/usr/local/bin/vault status -format=json 2>/dev/null | jq -r '.initialized')
+    
+    if [ "$INIT_STATUS" = "false" ]; then
+      echo "Initializing Vault cluster..."
+      
+      # Initialize cluster (no unseal keys needed - using KMS auto-unseal)
+      INIT_OUTPUT=$(/usr/local/bin/vault operator init -format=json 2>&1)
+      
+      echo "✓ Vault cluster initialized"
+      
+      # Extract and store root token in AWS Secrets Manager
+      ROOT_TOKEN=$(echo "$INIT_OUTPUT" | jq -r '.root_token')
+      
+      echo "Storing root token in AWS Secrets Manager..."
+      
+      SECRET_NAME="$RESOURCE_NAME_PREFIX-vault-root-token"
+      
+      # Store minimal secret with just the token
+      SECRET_CONTENT=$(jq -n \
+        --arg instance_id "$INSTANCE_ID" \
+        --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg root_token "$ROOT_TOKEN" \
+        '{
+          initialized_by_instance: $instance_id,
+          initialized_at: $timestamp,
+          root_token: $root_token
+        }')
+      
+      aws secretsmanager create-secret \
+        --name "$SECRET_NAME" \
+        --description "Vault root token for $RESOURCE_NAME_PREFIX cluster" \
+        --secret-string "$SECRET_CONTENT" \
+        --region "$AWS_REGION" \
+        --tags "Key=Name,Value=$RESOURCE_NAME_PREFIX-vault-root-token" "Key=Resource,Value=vault-cluster" \
+        2>/dev/null || {
+          # Secret might already exist, try to update it
+          aws secretsmanager update-secret \
+            --secret-id "$SECRET_NAME" \
+            --secret-string "$SECRET_CONTENT" \
+            --region "$AWS_REGION" \
+            2>/dev/null || echo "⚠ Warning: Could not store secret in AWS Secrets Manager"
+        }
+      
+      echo "✓ Root token stored in Secrets Manager: $SECRET_NAME"
+      echo "Note: This cluster uses KMS auto-unseal - no unseal keys needed"
+      
+      # Clean up lock
+      rmdir "$VAULT_DATA/.initializing_lock" 2>/dev/null || true
+    else
+      echo "✓ Cluster was initialized by another node while this node was starting"
+    fi
+  else
+    echo "Another node is initializing, waiting for cluster to become ready..."
+    
+    # Wait for cluster to be initialized by another node
+    INIT_CHECK_RETRIES=60
+    INIT_CHECK_COUNT=0
+    
+    while [ $INIT_CHECK_COUNT -lt $INIT_CHECK_RETRIES ]; do
+      INIT_STATUS=$(/usr/local/bin/vault status -format=json 2>/dev/null | jq -r '.initialized')
+      if [ "$INIT_STATUS" = "true" ]; then
+        echo "✓ Cluster initialized by another node"
+        break
+      fi
+      echo "Waiting for cluster initialization... ($((INIT_CHECK_COUNT + 1))/$INIT_CHECK_RETRIES)"
+      sleep 2
+      INIT_CHECK_COUNT=$((INIT_CHECK_COUNT + 1))
+    done
+    
+    if [ $INIT_CHECK_COUNT -eq $INIT_CHECK_RETRIES ]; then
+      echo "✗ Timeout waiting for cluster initialization"
+      exit 1
+    fi
+  fi
+fi
+
+echo "=== Vault cluster ready ==="

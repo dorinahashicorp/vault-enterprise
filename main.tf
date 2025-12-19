@@ -149,6 +149,16 @@ data "aws_iam_policy_document" "vault_policy" {
     ]
     resources = ["*"]
   }
+
+  # Secrets Manager for storing root token
+  statement {
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:PutSecretValue"
+    ]
+    resources = ["arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.resource_name_prefix}-vault-root-token*"]
+  }
 }
 
 resource "aws_iam_instance_profile" "vault" {
@@ -178,6 +188,8 @@ resource "aws_launch_template" "vault" {
     kms_key_id        = local.effective_kms_key_arn
     node_count        = var.node_count
     vault_version     = var.vault_version
+    resource_name_prefix = var.resource_name_prefix
+    aws_region        = var.aws_region
   }))
 
   vpc_security_group_ids = [aws_security_group.vault_nodes.id]
