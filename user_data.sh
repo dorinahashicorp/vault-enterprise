@@ -31,6 +31,10 @@ echo "=== Starting Vault Enterprise installation ==="
 echo "Version: $VAULT_VERSION"
 echo "Timestamp: $(date)"
 
+# Disable IPv6 to fix apt-get connectivity issues with NAT gateway
+sysctl -w net.ipv6.conf.all.disable_ipv6=1
+sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
 # Update system
 apt-get update
 apt-get install -y unzip curl wget jq
