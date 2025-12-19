@@ -227,7 +227,7 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_autoscaling_group" "vault" {
   name                = "${var.resource_name_prefix}-vault-asg"
-  vpc_zone_identifier = local.effective_vault_subnets
+  vpc_zone_identifier = local.effective_lb_subnets
   target_group_arns   = [aws_lb_target_group.vault.arn]
 
   min_size         = var.node_count

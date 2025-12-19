@@ -32,12 +32,19 @@ echo "Version: $VAULT_VERSION"
 echo "Timestamp: $(date)"
 
 # Disable IPv6 to fix apt-get connectivity issues with NAT gateway
-sysctl -w net.ipv6.conf.all.disable_ipv6=1
-sysctl -w net.ipv6.conf.default.disable_ipv6=1
+sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
 
-# Update system
-apt-get update
-apt-get install -y unzip curl wget jq
+# Update system and install dependencies (best effort - continue even if some fail)
+apt-get update || true
+apt-get install -y unzip curl wget jq || true
+
+# Verify required tools are available
+for cmd in curl jq; do
+  if ! command -v $cmd &> /dev/null; then
+    echo "WARNING: $cmd not found, some operations may fail"
+  fi
+done
 
 # Create vault user and directories
 useradd -r -d "$VAULT_HOME" -s /bin/false "$VAULT_USER" || true
@@ -47,11 +54,22 @@ chmod 700 "$VAULT_DATA"
 
 # Download and install Vault
 cd /tmp
-curl -fsSLO "$VAULT_INSTALL_URL"
-unzip -o "vault_$${VAULT_VERSION}_linux_amd64.zip"
-mv vault /usr/local/bin/
-chmod +x /usr/local/bin/vault
-rm -f "vault_$${VAULT_VERSION}_linux_amd64.zip"
+echo "Attempting to download Vault $VAULT_VERSION..."
+if curl -fsSLO "$VAULT_INSTALL_URL" 2>/dev/null; then
+  unzip -o "vault_$${VAULT_VERSION}_linux_amd64.zip"
+  mv vault /usr/local/bin/
+  chmod +x /usr/local/bin/vault
+  rm -f "vault_$${VAULT_VERSION}_linux_amd64.zip"
+  echo "✓ Vault downloaded and installed successfully"
+else
+  echo "WARNING: Could not download Vault from $VAULT_INSTALL_URL"
+  echo "Checking if vault binary exists in PATH..."
+  if ! command -v vault &> /dev/null; then
+    echo "ERROR: Vault binary not available and could not download"
+    exit 1
+  fi
+  echo "✓ Using existing vault binary"
+fi
 
 # Enable mlock
 setcap cap_ipc_lock=+ep /usr/local/bin/vault
