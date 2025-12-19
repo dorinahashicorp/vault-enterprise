@@ -21,6 +21,8 @@ VAULT_FQDN="${vault_fqdn}"
 NODE_COUNT="${node_count}"
 RESOURCE_NAME_PREFIX="${resource_name_prefix}"
 AWS_REGION="${aws_region}"
+TLS_SECRET_NAME="${tls_secret_name}"
+LICENSE_SECRET_NAME="${license_secret_name}"
 
 echo "=== Starting Vault Enterprise installation ==="
 echo "Version: $VAULT_VERSION"
@@ -47,18 +49,38 @@ rm -f "vault_$${VAULT_VERSION}_linux_amd64.zip"
 # Enable mlock
 setcap cap_ipc_lock=+ep /usr/local/bin/vault
 
+# Retrieve TLS certificates from AWS Secrets Manager
+echo "Retrieving TLS certificates from Secrets Manager..."
+TLS_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id "$TLS_SECRET_NAME" \
+  --region "$AWS_REGION" \
+  --query SecretString \
+  --output text 2>/dev/null || echo "{}")
+
+# Parse certificate values from JSON
+VAULT_SERVER_CERT=$(echo "$TLS_SECRET" | jq -r '.server_cert // empty')
+VAULT_SERVER_KEY=$(echo "$TLS_SECRET" | jq -r '.server_key // empty')
+VAULT_CA_CERT=$(echo "$TLS_SECRET" | jq -r '.ca_cert // empty')
+
+if [ -z "$VAULT_SERVER_CERT" ] || [ -z "$VAULT_SERVER_KEY" ]; then
+  echo "ERROR: Failed to retrieve TLS certificates from Secrets Manager"
+  exit 1
+fi
+
 # Write TLS certificates
-cat > "$VAULT_CONFIG/tls.pem" <<'EOF'
-${vault_server_cert}
+cat > "$VAULT_CONFIG/tls.pem" <<EOF
+$VAULT_SERVER_CERT
 EOF
 
-cat > "$VAULT_CONFIG/tls-key.pem" <<'EOF'
-${vault_server_key}
+cat > "$VAULT_CONFIG/tls-key.pem" <<EOF
+$VAULT_SERVER_KEY
 EOF
 
-cat > "$VAULT_CONFIG/ca.pem" <<'EOF'
-${vault_ca_cert}
+if [ -n "$VAULT_CA_CERT" ]; then
+  cat > "$VAULT_CONFIG/ca.pem" <<EOF
+$VAULT_CA_CERT
 EOF
+fi
 
 chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG"/*.pem
 chmod 600 "$VAULT_CONFIG"/*.pem
@@ -106,11 +128,21 @@ EOF
 chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/vault.hcl"
 chmod 640 "$VAULT_CONFIG/vault.hcl"
 
-# Write Vault license (if provided)
-if [ -n "${vault_license}" ]; then
-  echo "${vault_license}" > "$VAULT_CONFIG/license.hclic"
-  chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/license.hclic"
-  chmod 600 "$VAULT_CONFIG/license.hclic"
+# Retrieve and write Vault license (if configured)
+echo "Retrieving Vault license from Secrets Manager..."
+if [ -n "$LICENSE_SECRET_NAME" ]; then
+  LICENSE=$(aws secretsmanager get-secret-value \
+    --secret-id "$LICENSE_SECRET_NAME" \
+    --region "$AWS_REGION" \
+    --query SecretString \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -n "$LICENSE" ]; then
+    echo "$LICENSE" > "$VAULT_CONFIG/license.hclic"
+    chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/license.hclic"
+    chmod 600 "$VAULT_CONFIG/license.hclic"
+    echo "✓ License file written"
+  fi
 fi
 
 # Create systemd service
