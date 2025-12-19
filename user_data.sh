@@ -21,6 +21,11 @@ VAULT_FQDN="${vault_fqdn}"
 NODE_COUNT="${node_count}"
 RESOURCE_NAME_PREFIX="${resource_name_prefix}"
 AWS_REGION="${aws_region}"
+HCP_VAULT_ADDR="${hcp_vault_addr}"
+HCP_VAULT_NAMESPACE="${hcp_vault_namespace}"
+HCP_VAULT_TOKEN_FILE="${hcp_vault_token_file}"
+VAULT_KV_MOUNT="${vault_kv_mount}"
+VAULT_KV_PATH="${vault_kv_path}"
 
 echo "=== Starting Vault Enterprise installation ==="
 echo "Version: $VAULT_VERSION"
@@ -47,23 +52,62 @@ rm -f "vault_$${VAULT_VERSION}_linux_amd64.zip"
 # Enable mlock
 setcap cap_ipc_lock=+ep /usr/local/bin/vault
 
+# Retrieve certificates and license from HCP Vault at runtime
+echo "Retrieving Vault configuration from HCP Vault..."
+if [ ! -f "$HCP_VAULT_TOKEN_FILE" ]; then
+  echo "ERROR: HCP Vault token file not found at $HCP_VAULT_TOKEN_FILE"
+  exit 1
+fi
+
+HCP_VAULT_TOKEN=$(cat "$HCP_VAULT_TOKEN_FILE")
+
+# Retrieve secrets from HCP Vault KV mount
+KV_RESPONSE=$(curl -s \
+  -H "X-Vault-Namespace: $HCP_VAULT_NAMESPACE" \
+  -H "X-Vault-Token: $HCP_VAULT_TOKEN" \
+  "$HCP_VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/$VAULT_KV_PATH" 2>/dev/null || echo "{}")
+
+if [ "$KV_RESPONSE" = "{}" ]; then
+  echo "ERROR: Failed to retrieve secrets from HCP Vault"
+  exit 1
+fi
+
+# Extract certificate values
+VAULT_SERVER_CERT=$(echo "$KV_RESPONSE" | jq -r '.data.data.server_cert // empty')
+VAULT_SERVER_KEY=$(echo "$KV_RESPONSE" | jq -r '.data.data.server_key // empty')
+VAULT_CA_CERT=$(echo "$KV_RESPONSE" | jq -r '.data.data.ca_cert // empty')
+VAULT_LICENSE=$(echo "$KV_RESPONSE" | jq -r '.data.data.license // empty')
+
+if [ -z "$VAULT_SERVER_CERT" ] || [ -z "$VAULT_SERVER_KEY" ]; then
+  echo "ERROR: Failed to extract certificates from HCP Vault response"
+  exit 1
+fi
+
+echo "✓ Successfully retrieved secrets from HCP Vault"
+
 # Write TLS certificates
-cat > "$VAULT_CONFIG/tls.pem" <<'EOF'
-${vault_server_cert}
+cat > "$VAULT_CONFIG/tls.pem" <<EOF
+$VAULT_SERVER_CERT
 EOF
 
-cat > "$VAULT_CONFIG/tls-key.pem" <<'EOF'
-${vault_server_key}
+cat > "$VAULT_CONFIG/tls-key.pem" <<EOF
+$VAULT_SERVER_KEY
 EOF
 
-cat > "$VAULT_CONFIG/ca.pem" <<'EOF'
-${vault_ca_cert}
+cat > "$VAULT_CONFIG/ca.pem" <<EOF
+$VAULT_CA_CERT
 EOF
 
 chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG"/*.pem
 chmod 600 "$VAULT_CONFIG"/*.pem
 
-# Get instance metadata
+# Write license if present
+if [ -n "$VAULT_LICENSE" ]; then
+  echo "$VAULT_LICENSE" > "$VAULT_CONFIG/license.hclic"
+  chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/license.hclic"
+  chmod 600 "$VAULT_CONFIG/license.hclic"
+  echo "✓ License written"
+fi
 INSTANCE_ID=$(ec2-metadata --instance-id | cut -d' ' -f2)
 PRIVATE_IP=$(ec2-metadata --local-ipv4 | cut -d' ' -f2)
 AZ=$(ec2-metadata --availability-zone | cut -d' ' -f2)
@@ -105,13 +149,6 @@ EOF
 
 chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/vault.hcl"
 chmod 640 "$VAULT_CONFIG/vault.hcl"
-
-# Write Vault license
-if [ -n "${vault_license}" ]; then
-  echo "${vault_license}" > "$VAULT_CONFIG/license.hclic"
-  chown "$VAULT_USER:$VAULT_GROUP" "$VAULT_CONFIG/license.hclic"
-  chmod 600 "$VAULT_CONFIG/license.hclic"
-fi
 
 # Create systemd service
 cat > /etc/systemd/system/vault.service <<'EOF'

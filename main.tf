@@ -176,10 +176,11 @@ resource "aws_launch_template" "vault" {
     vault_version        = var.vault_version
     resource_name_prefix = var.resource_name_prefix
     aws_region           = var.aws_region
-    vault_server_cert    = local.vault_server_cert
-    vault_server_key     = local.vault_server_key
-    vault_ca_cert        = local.vault_ca_cert
-    vault_license        = local.vault_license
+    vault_kv_mount       = var.vault_kv_mount
+    vault_kv_path        = var.vault_kv_path_prefix
+    hcp_vault_addr       = var.tfc_vault_dynamic_credentials.default.address
+    hcp_vault_namespace  = var.tfc_vault_dynamic_credentials.default.namespace
+    hcp_vault_token_file = var.tfc_vault_dynamic_credentials.default.token_filename
   }))
 
   vpc_security_group_ids = [aws_security_group.vault_nodes.id]
