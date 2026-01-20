@@ -1,61 +1,88 @@
-#==============================================================================
-# Vault Enterprise Module from HashiCorp
-#==============================================================================
-# Official Validated Deployment module from HashiCorp
-# Source: https://github.com/hashicorp/terraform-aws-vault-enterprise-hvd
-#
-# DEPENDENCY: This module requires AWS prerequisites to be in place first.
-# These prerequisites are created by prerequisites.tf:
-#   - VPC: aws_vpc.main
-#   - Subnets: aws_subnet.private[*], aws_subnet.public[*]
-#   - KMS: aws_kms_key.vault
-#   - Secrets Manager: aws_secretsmanager_secret.vault_*
-#   - NAT Gateways: aws_nat_gateway.main[*]
-#
-# The values for the module inputs (vpc_id, subnet_ids, kms_key_arn, secret ARNs)
-# come from the prerequisites configuration outputs.
-#
-# This module is used exactly as documented with no modifications.
-# All prerequisites must be in place in AWS before running terraform apply.
+################################################################################
+# HashiCorp Validated Design (HVD) - Vault Enterprise on AWS
+################################################################################
 
-module "vault" {
-  source  = "hashicorp/terraform-aws-vault-enterprise-hvd/aws"
-  version = "~> 0.2"
+module "vault_enterprise_hvd" {
+  source  = "hashicorp/vault-enterprise-hvd/aws"
+  version = "0.2.0"
 
-  # Common Configuration
-  friendly_name_prefix = var.friendly_name_prefix
-  vault_fqdn           = var.vault_fqdn
-  resource_tags        = var.resource_tags
+  # Dependency: Wait for infrastructure and secrets to be ready
+  depends_on = [
+    aws_vpc.vault,
+    aws_subnet.private,
+    aws_subnet.public,
+    aws_nat_gateway.vault,
+    aws_kms_key.vault_unseal,
+    aws_vpc_endpoint.secretsmanager,
+    aws_vpc_endpoint.kms,
+    aws_vpc_endpoint.ec2,
+    aws_secretsmanager_secret_version.vault_license,
+    aws_secretsmanager_secret_version.vault_tls_cert,
+    aws_secretsmanager_secret_version.vault_tls_key,
+    aws_secretsmanager_secret_version.vault_ca_bundle
+  ]
 
-  # Networking - Required
-  # These come from prerequisites.tf outputs
-  net_vpc_id           = var.vpc_id
-  net_vault_subnet_ids = var.vault_subnet_ids
-  net_lb_subnet_ids    = var.lb_subnet_ids
+  #-----------------------------------------------------------------------------
+  # Required Variables - Using auto-created infrastructure
+  #-----------------------------------------------------------------------------
 
-  # Network Security
-  net_ingress_vault_cidr_blocks = var.ingress_cidr_blocks
-  net_ingress_ssh_cidr_blocks   = var.ingress_ssh_cidr_blocks
-  load_balancing_scheme         = "INTERNAL"
+  # Network Configuration (from infrastructure.tf)
+  net_vpc_id            = aws_vpc.vault.id
+  net_vault_subnet_ids  = aws_subnet.private[*].id
+  net_lb_subnet_ids     = var.load_balancing_scheme == "INTERNAL" ? aws_subnet.private[*].id : aws_subnet.public[*].id
 
-  # AWS Secrets Manager - Created by prerequisites.tf
-  # Dependency: Requires aws_secretsmanager_secret.vault_* to exist
-  # These secrets are created as placeholders and must be populated manually
-  sm_vault_license_arn      = var.vault_license_secret_arn
-  sm_vault_tls_cert_arn     = var.vault_tls_cert_secret_arn
-  sm_vault_tls_cert_key_arn = var.vault_tls_key_secret_arn
-  sm_vault_tls_ca_bundle    = var.vault_ca_cert_secret_arn
+  # Vault FQDN
+  vault_fqdn = var.vault_fqdn
 
-  # KMS Configuration - Created by prerequisites.tf
-  # Dependency: Requires aws_kms_key.vault to exist
-  vault_seal_awskms_key_arn = var.kms_key_id
+  # AWS Secrets Manager ARNs for License and TLS (from secrets.tf)
+  sm_vault_license_arn       = aws_secretsmanager_secret.vault_license.arn
+  sm_vault_tls_cert_arn      = aws_secretsmanager_secret.vault_tls_cert.arn
+  sm_vault_tls_cert_key_arn  = aws_secretsmanager_secret.vault_tls_key.arn
+  sm_vault_tls_ca_bundle     = aws_secretsmanager_secret.vault_ca_bundle.arn
 
-  # Vault Configuration
-  vault_version        = var.vault_version
-  asg_node_count       = var.node_count
-  vm_instance_type     = var.instance_type
+  # KMS Auto-Unseal (from infrastructure.tf)
+  vault_seal_awskms_key_arn = aws_kms_key.vault_unseal.arn
 
-  # Vault Features
-  vault_disable_mlock = false
-  vault_enable_ui     = true
+  #-----------------------------------------------------------------------------
+  # Optional Configuration
+  #-----------------------------------------------------------------------------
+
+  # Vault Version and Cluster Size
+  vault_version  = var.vault_version
+  asg_node_count = var.asg_node_count
+
+  # Instance Configuration
+  vm_instance_type = var.vm_instance_type
+
+  # Vault TTL Configuration
+  vault_default_lease_ttl_duration = var.vault_default_lease_ttl_duration
+  vault_max_lease_ttl_duration     = var.vault_max_lease_ttl_duration
+
+  # Vault Ports
+  vault_port_api     = var.vault_port_api
+  vault_port_cluster = var.vault_port_cluster
+
+  # Load Balancing
+  load_balancing_scheme = var.load_balancing_scheme
+
+  # Raft Configuration
+  vault_raft_performance_multiplier = var.vault_raft_performance_multiplier
+
+  # Disk Configurations
+  vm_boot_disk_configuration        = var.vm_boot_disk_configuration
+  vm_vault_data_disk_configuration  = var.vm_vault_data_disk_configuration
+  vm_vault_audit_disk_configuration = var.vm_vault_audit_disk_configuration
+
+  # Optional Snapshots Bucket
+  vault_snapshots_bucket_arn = var.vault_snapshots_bucket_arn
+
+  # Additional Tags
+  common_tags = merge(
+    var.common_tags,
+    {
+      Environment = var.environment
+      ManagedBy   = "terraform"
+      Module      = "vault-enterprise-hvd"
+    }
+  )
 }

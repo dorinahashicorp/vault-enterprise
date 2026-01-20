@@ -1,156 +1,208 @@
-#==============================================================================
-# Vault Enterprise HVD Module Configuration
-#==============================================================================
-# IMPORTANT: Prerequisites Configuration Dependency
-# Before applying this configuration, you must:
-#
-# STEP 1: Apply prerequisites.tf (to create AWS infrastructure)
-#   terraform apply -f prerequisites.tf
-#   This creates: VPC, subnets, NAT Gateways, KMS key
-#
-# STEP 2: Create Secrets Manager secrets (manually, outside Terraform)
-#   Use AWS CLI to create 4 secrets with actual content:
-#     - vault-license (your Vault Enterprise license file)
-#     - vault-tls-cert (TLS certificate in PEM format)
-#     - vault-tls-key (TLS private key in PEM format)
-#     - vault-ca-cert (CA certificate in PEM format)
-#   See: AWS_SETUP_STEPS.md for AWS CLI commands
-#
-# STEP 3: Create terraform.tfvars for main configuration
-#   Copy prerequisite outputs to terraform.tfvars
-#   Add the ARNs of the 4 secrets created in STEP 2
-#   See: terraform.tfvars.example for format
-#
-# STEP 4: Run terraform apply (main Vault module)
-#   terraform apply
-#   This deploys Vault Enterprise using prerequisite infrastructure
-#
-# See: README_DEPLOYMENT.md for complete deployment workflow
-
-#==============================================================================
-# AWS Variables
-#==============================================================================
+################################################################################
+# General Configuration
+################################################################################
 
 variable "aws_region" {
-  description = "AWS region to deploy to"
+  description = "AWS region where Vault will be deployed"
   type        = string
   default     = "us-east-1"
 }
 
-#==============================================================================
-# VPC and Network Variables
-#==============================================================================
-
-variable "vpc_id" {
-  description = "VPC ID to deploy Vault into"
+variable "environment" {
+  description = "Environment name (e.g., dev, staging, prod)"
   type        = string
+  default     = "prod"
 }
 
-variable "vault_subnet_ids" {
-  description = "List of subnet IDs for Vault instances (3 required, one per AZ)"
-  type        = list(string)
-  validation {
-    condition     = length(var.vault_subnet_ids) == 3
-    error_message = "Must provide exactly 3 vault subnet IDs (one per AZ)."
-  }
-}
-
-variable "lb_subnet_ids" {
-  description = "List of subnet IDs for load balancer (3 required, one per AZ)"
-  type        = list(string)
-  validation {
-    condition     = length(var.lb_subnet_ids) == 3
-    error_message = "Must provide exactly 3 LB subnet IDs (one per AZ)."
-  }
-}
-
-variable "ingress_cidr_blocks" {
-  description = "CIDR blocks allowed to access Vault API"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "ingress_ssh_cidr_blocks" {
-  description = "CIDR blocks allowed SSH access"
-  type        = list(string)
-  default     = []
-}
-
-#==============================================================================
-# KMS Variables
-#==============================================================================
-
-variable "kms_key_id" {
-  description = "KMS key ID for Vault auto-unseal"
-  type        = string
-}
-
-#==============================================================================
-# AWS Secrets Manager ARNs (Pre-created in AWS)
-#==============================================================================
-# These secrets must already exist in your AWS account before running terraform.
-# The module's bootstrap script will fetch values from these ARNs.
-# See: https://github.com/hashicorp/terraform-aws-vault-enterprise-hvd#prerequisites
-
-variable "vault_license_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing Vault Enterprise license"
-  type        = string
-}
-
-variable "vault_tls_cert_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing TLS certificate"
-  type        = string
-}
-
-variable "vault_tls_key_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing TLS certificate private key"
-  type        = string
-}
-
-variable "vault_ca_cert_secret_arn" {
-  description = "ARN of AWS Secrets Manager secret containing CA certificate"
-  type        = string
-}
-
-#==============================================================================
-# Vault Configuration Variables
-#==============================================================================
-
-variable "friendly_name_prefix" {
-  description = "Friendly name prefix for resources"
+variable "resource_name_prefix" {
+  description = "Prefix for resource names (e.g., infragoose-prod)"
   type        = string
   default     = "vault"
 }
 
-variable "vault_version" {
-  description = "Vault Enterprise version to deploy"
+################################################################################
+# Network Configuration - Auto-created
+################################################################################
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
   type        = string
-  default     = "1.17.0"
+  default     = "10.0.0.0/16"
 }
 
-variable "node_count" {
-  description = "Number of Vault nodes to deploy"
+variable "kms_deletion_window" {
+  description = "KMS key deletion window in days"
   type        = number
-  default     = 3
+  default     = 10
+}
+
+################################################################################
+# Vault FQDN - REQUIRED
+################################################################################
+
+variable "vault_fqdn" {
+  description = "Fully qualified domain name for Vault (e.g., vault.infragoose.com)"
+  type        = string
+}
+
+################################################################################
+# Vault License and TLS Certificates - REQUIRED
+# Add these as sensitive variables in HCP Terraform workspace
+################################################################################
+
+variable "vault_license" {
+  description = "Vault Enterprise license content (entire .hclic file content)"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_tls_cert" {
+  description = "TLS certificate in PEM format (include full chain)"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_tls_key" {
+  description = "TLS certificate private key in PEM format"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_ca_bundle" {
+  description = "CA certificate bundle in PEM format"
+  type        = string
+  sensitive   = true
+}
+
+
+################################################################################
+# Vault Configuration - Optional
+################################################################################
+
+variable "vault_version" {
+  description = "Version of Vault Enterprise to deploy"
+  type        = string
+  default     = "1.18.2+ent"
+}
+
+variable "asg_node_count" {
+  description = "Number of Vault nodes in the Auto Scaling Group (recommended: 5-6 for HA)"
+  type        = number
+  default     = 6
+}
+
+variable "vm_instance_type" {
+  description = "EC2 instance type for Vault nodes"
+  type        = string
+  default     = "m7i.large"
+}
+
+variable "vault_default_lease_ttl_duration" {
+  description = "Default lease TTL for Vault secrets"
+  type        = string
+  default     = "1h"
+}
+
+variable "vault_max_lease_ttl_duration" {
+  description = "Maximum lease TTL for Vault secrets"
+  type        = string
+  default     = "768h"
+}
+
+variable "vault_port_api" {
+  description = "Port for Vault API"
+  type        = string
+  default     = "8200"
+}
+
+variable "vault_port_cluster" {
+  description = "Port for Vault cluster communication"
+  type        = string
+  default     = "8201"
+}
+
+variable "load_balancing_scheme" {
+  description = "Load balancer scheme: INTERNAL (private) or EXTERNAL (public)"
+  type        = string
+  default     = "INTERNAL"
   validation {
-    condition     = var.node_count >= 3
-    error_message = "Minimum 3 nodes required for HA cluster."
+    condition     = contains(["INTERNAL", "EXTERNAL", "NONE"], var.load_balancing_scheme)
+    error_message = "Load balancing scheme must be INTERNAL, EXTERNAL, or NONE."
   }
 }
 
-variable "instance_type" {
-  description = "EC2 instance type for Vault nodes"
-  type        = string
-  default     = "t3.large"
+variable "vault_raft_performance_multiplier" {
+  description = "Raft performance multiplier (1-10). Lower values increase sensitivity to leader heartbeat timeouts."
+  type        = number
+  default     = 5
 }
 
-variable "vault_fqdn" {
-  description = "FQDN for Vault cluster (used for TLS and cluster joining)"
-  type        = string
+################################################################################
+# Storage Configuration - Optional
+################################################################################
+
+variable "vm_boot_disk_configuration" {
+  description = "Boot disk configuration for Vault EC2 instances"
+  type = object({
+    volume_type = string
+    volume_size = number
+    iops        = optional(number)
+    throughput  = optional(number)
+    encrypted   = bool
+  })
+  default = {
+    volume_type = "gp3"
+    volume_size = 30
+    encrypted   = true
+  }
 }
 
-variable "resource_tags" {
-  description = "Tags to apply to all resources"
+variable "vm_vault_data_disk_configuration" {
+  description = "Data disk configuration for Vault storage (Raft)"
+  type = object({
+    volume_type = string
+    volume_size = number
+    iops        = optional(number)
+    throughput  = optional(number)
+    encrypted   = bool
+  })
+  default = {
+    volume_type = "gp3"
+    volume_size = 100
+    iops        = 3000
+    throughput  = 125
+    encrypted   = true
+  }
+}
+
+variable "vm_vault_audit_disk_configuration" {
+  description = "Audit disk configuration for Vault audit logs"
+  type = object({
+    volume_type = string
+    volume_size = number
+    iops        = optional(number)
+    throughput  = optional(number)
+    encrypted   = bool
+  })
+  default = {
+    volume_type = "gp3"
+    volume_size = 50
+    encrypted   = true
+  }
+}
+
+variable "vault_snapshots_bucket_arn" {
+  description = "ARN of S3 bucket for automated Raft snapshots (optional)"
+  type        = string
+  default     = null
+}
+
+################################################################################
+# Additional Tags - Optional
+################################################################################
+
+variable "common_tags" {
+  description = "Additional tags to apply to all resources"
   type        = map(string)
   default     = {}
 }

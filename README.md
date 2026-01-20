@@ -1,445 +1,455 @@
-# Vault Enterprise Deployment on AWS via HCP Terraform
+# Vault Enterprise Deployment on AWS
 
-A learning project to deploy HashiCorp Vault Enterprise in AWS following HashiCorp best practices, orchestrated through HCP Terraform and integrated with HCP Vault Dedicated for secrets management.
+This repository contains Terraform configuration for deploying HashiCorp Vault Enterprise on AWS using the [HashiCorp Validated Design (HVD)](https://registry.terraform.io/modules/hashicorp/vault-enterprise-hvd/aws/latest).
 
-## Architecture Overview
+## Architecture
 
-This configuration deploys a production-ready Vault Enterprise cluster on AWS with:
+This configuration creates a complete, production-ready Vault Enterprise deployment with:
 
-- **3-node HA cluster** using Raft storage backend
-- **Auto-unseal** via AWS KMS
-- **Load-balanced access** across availability zones
-- **Encrypted TLS** communication with certificates stored in HCP Vault
-- **Secrets orchestration** through HCP Vault Dedicated JWT authentication with workload identity tokens
+- **High Availability**: 6 Vault nodes across 3 availability zones
+- **Auto-Unseal**: AWS KMS-based automatic unsealing
+- **Storage Backend**: Integrated Raft storage
+- **Load Balancing**: Internal AWS Application Load Balancer
+- **TLS**: End-to-end encryption with custom certificates
+- **Auto Scaling**: Automatic node replacement and health monitoring
+- **Complete Network Infrastructure**: VPC, subnets, NAT gateways, and VPC endpoints
+- **Automated Secrets Management**: Terraform creates AWS Secrets Manager secrets from HCP Terraform variables
 
-### Component Diagram
+## Infrastructure Components
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ HCP Terraform (Infragoose/vault-enterprise)                  │
-│  ├─ Workload Identity (JWT Provider)                         │
-│  ├─ VCS: dorinahashicorp/vault-enterprise (GitHub)          │
-│  └─ Environment Variables (Variable Set):                    │
-│     ├─ TFC_VAULT_PROVIDER_AUTH = true                       │
-│     ├─ TFC_VAULT_ADDR = Vault cluster address               │
-│     ├─ TFC_VAULT_NAMESPACE = admin                          │
-│     ├─ TFC_VAULT_RUN_ROLE = tfc-role                        │
-│     └─ AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY             │
-└─────────────────────────────────────────────────────────────┘
-                          │
-         ┌────────────────┴────────────────┐
-         ▼                                  ▼
-┌──────────────────────────┐    ┌──────────────────────────┐
-│ HCP Vault Dedicated      │    │ AWS (us-east-1)          │
-│ (admin namespace)        │    │                          │
-│                          │    │ ├─ EC2 (3x t3.medium)   │
-│ JWT Auth: tfc-role      │    │ ├─ NLB                  │
-│  └─ Workload Identity   │    │ ├─ KMS (auto-unseal)    │
-│     Audience            │    │ └─ Security Groups      │
-│                          │    │                          │
-│ KV Mount: kv/           │    │ VPC: 10.50.0.0/16       │
-│  └─ vault/              │    │                          │
-│     ├─ ca_cert          │    └──────────────────────────┘
-│     ├─ license          │
-│     ├─ server_cert      │
-│     └─ server_key       │
-└──────────────────────────┘
-```
+The Terraform configuration automatically creates:
 
-## Authentication Flow
+### Network Infrastructure
+- **VPC**: Dedicated VPC with customizable CIDR (default: 10.0.0.0/16)
+- **Subnets**: 3 private subnets and 3 public subnets across different AZs
+- **NAT Gateways**: One per AZ for high availability
+- **Internet Gateway**: For public subnet internet access
+- **VPC Endpoints**: S3 (gateway), Secrets Manager, KMS, and EC2 (interface endpoints)
 
-**HCP Terraform → HCP Vault (JWT Workload Identity)**
+### Security
+- **KMS Key**: Dedicated AWS KMS key for auto-unseal with automatic rotation
+- **AWS Secrets Manager**: Automatically created from Terraform variables
+- **Security Groups**: For Vault instances, load balancer, and VPC endpoints
+- **Encrypted EBS Volumes**: All disks encrypted at rest
 
-1. **Token Generation**: HCP Terraform generates a short-lived JWT token containing:
-   - `aud` (audience): `vault.workload.identity`
-   - `sub` (subject): `organization:Infragoose:project:*:workspace:vault-enterprise:run_phase:*`
-   - Workspace identity and run context
-   
-2. **Token Validation**: Vault validates the JWT using HCP Terraform's OIDC discovery endpoint:
-   - Verifies signature using HCP Terraform's public keys
-   - Confirms issuer is `https://app.terraform.io`
-   - Matches bound_claims against workspace identity
-   
-3. **Token Exchange**: Vault exchanges the JWT for a temporary access token with:
-   - `tfc-policy` attached (read-only access to secrets)
-   - 20-minute TTL (renewable)
-   
-4. **Secret Retrieval**: Temporary token is used to fetch secrets from `kv/vault`
-
-5. **Token Lifecycle**: HCP Terraform:
-   - Manages the token file throughout the run
-   - Renews the token if runs exceed 20 minutes
-   - Revokes the token at run completion
-
-## Secrets Management Flow (Updated)
-
-1. **Terraform Run Start**: HCP Terraform generates workload identity JWT token
-2. **JWT Auth**: Authenticates to HCP Vault using:
-   - Signed JWT token (auto-provided by HCP Terraform)
-   - JWT auth method at `auth/jwt/` path
-   - Role binding to `tfc-role` with workspace identity claims
-3. **Token Exchange**: JWT is validated and exchanged for temporary access token with:
-   - `tfc-policy` permissions
-   - 20-minute TTL with renewal capability
-4. **Secret Retrieval**: Fetches secrets from `kv/vault` in the `admin` namespace:
-   - `ca_cert` → Passed to AWS as TLS CA bundle
-   - `license` → Passed to AWS for Vault licensing
-   - `server_cert` → Passed to AWS for TLS server certificate
-   - `server_key` → Passed to AWS for TLS server private key
-5. **Cluster Provisioning**: AWS resources are created with the secrets
-6. **Token Cleanup**: Token is automatically revoked when the Terraform run completes
+### Compute
+- **Auto Scaling Group**: 6 EC2 instances (m7i.large) across 3 AZs
+- **Application Load Balancer**: For distributing traffic to Vault nodes
+- **Launch template**
 
 ## Prerequisites
 
-### 1. HCP Vault Dedicated Setup
-- **Cluster**: Active HCP Vault Dedicated instance
-- **Namespace**: `admin` (default)
-- **KV Mount**: `kv` with the following secrets at `kv/vault`:
-  ```
-  ca_cert      - PEM-encoded CA certificate chain
-  license      - Vault Enterprise license file content
-  server_cert  - PEM-encoded server certificate
-  server_key   - PEM-encoded private key
-  ```
+### 1. HCP Terraform Workspace
 
-### 2. HCP Vault JWT Authentication Configuration
+You already have:
+- ✅ HCP Terraform workspace named `vault-enterprise`
+- ✅ AWS credentials configured as environment variables
+- ✅ `vault_fqdn` variable set to `vault.infragoose.com`
 
-The JWT authentication method has been pre-configured in HCP Vault. The configuration establishes trust between HCP Terraform and HCP Vault:
+### 2. Prepare Your Secrets
 
-**JWT Auth Backend** (`auth/jwt/`):
-- **OIDC Discovery URL**: `https://app.terraform.io`
-- **Bound Issuer**: `https://app.terraform.io`
-- Validates JWTs signed by HCP Terraform's workload identity provider
+Have these files ready to add to HCP Terraform workspace variables:
+- **Vault Enterprise License**: Your `.hclic` file
+- **TLS Certificate**: Your certificate in PEM format (including full chain)
+- **TLS Private Key**: Your private key in PEM format
+- **CA Bundle**: Your CA certificate bundle in PEM format
 
-**JWT Role** (`auth/jwt/role/tfc-role`):
-- **Bound Audience**: `vault.workload.identity`
-- **Bound Claims**: Matches workspace identity pattern:
-  ```
-  organization:Infragoose:project:*:workspace:vault-enterprise:run_phase:*
-  ```
-- **Attached Policy**: `tfc-policy` (read-only access to Vault secrets)
-- **Token TTL**: 20 minutes (renewable for runs exceeding 20 minutes)
-
-**Policy** (`tfc-policy`):
-```hcl
-# Allow tokens to query themselves
-path "auth/token/lookup-self" {
-  capabilities = ["read"]
-}
-
-# Allow tokens to renew themselves
-path "auth/token/renew-self" {
-  capabilities = ["update"]
-}
-
-# Allow tokens to revoke themselves
-path "auth/token/revoke-self" {
-  capabilities = ["update"]
-}
-
-# Allow reading KV v2 secrets
-path "kv/data/vault" {
-  capabilities = ["read"]
-}
-
-# Allow listing KV mount
-path "kv/metadata/*" {
-  capabilities = ["list"]
-}
-```
-
-#### Why JWT Instead of AppRole?
-
-**AppRole Limitations in HCP Vault Dedicated**:
-- Difficult to manage secret_id rotation
-- Secret IDs are credentials requiring secure storage
-- Namespace-scoped policy evaluation in child namespaces can be problematic
-
-**JWT Workload Identity Benefits**:
-- ✅ **No Secrets to Manage**: Tokens are generated by HCP Terraform automatically
-- ✅ **Passwordless**: Zero-trust architecture using cryptographic signatures
-- ✅ **Automatic Lifecycle**: HCP Terraform manages token generation, renewal, and revocation
-- ✅ **Audit Trail**: Each run has a distinct token with workspace identity context
-- ✅ **Short-Lived**: 20-minute TTL minimizes exposure window
-- ✅ **Namespace-Safe**: Works reliably across all namespace configurations
-
-### 3. HCP Terraform Workspace Setup
-The `vault-enterprise` workspace in the `Infragoose` organization requires:
-
-**Required Terraform Variable**:
-- `tfc_vault_dynamic_credentials` (object): This is automatically provided by HCP Terraform when the environment variables below are set. Do NOT set this manually.
-
-**Required Environment Variables** (set in workspace variable set):
-- `TFC_VAULT_PROVIDER_AUTH` (string): **Must be `true`** - enables dynamic credential provider authentication
-- `TFC_VAULT_ADDR` (string): Your HCP Vault Dedicated cluster URL
-  - Example: `https://dorina-demo-cluster-public-vault-xxxxx.z1.hashicorp.cloud:8200`
-- `TFC_VAULT_NAMESPACE` (string): Vault namespace (use `admin`)
-- `TFC_VAULT_RUN_ROLE` (string): Vault JWT role name (use `tfc-role`)
-
-**AWS Credentials Variable Set**:
-- `AWS_ACCESS_KEY_ID` (string, sensitive): AWS IAM access key
-- `AWS_SECRET_ACCESS_KEY` (string, sensitive): AWS IAM secret key
-
-#### Setting Up Environment Variables in HCP Terraform
-
-1. In the `vault-enterprise` workspace settings, navigate to **Variables**
-2. Click **Add variable set** or attach an existing one
-3. Create/update a variable set with the required environment variables:
-
-```
-TFC_VAULT_PROVIDER_AUTH = true
-TFC_VAULT_ADDR = https://dorina-demo-cluster-public-vault-xxxxx.z1.hashicorp.cloud:8200
-TFC_VAULT_NAMESPACE = admin
-TFC_VAULT_RUN_ROLE = tfc-role
-AWS_ACCESS_KEY_ID = (your AWS key)
-AWS_SECRET_ACCESS_KEY = (your AWS secret)
-```
-
-4. Mark sensitive variables as **sensitive** (toggles next to the values)
-5. Attach the variable set to the workspace
-
-**How It Works**:
-- When a Terraform run starts, HCP Terraform automatically generates a JWT token containing:
-  - Organization: `Infragoose`
-  - Workspace: `vault-enterprise`
-  - Run phase information
-- The JWT is written to a temporary file with path provided via `TFC_VAULT_TOKEN` environment variable
-- Terraform provider reads this file and authenticates to Vault without needing credentials in code
-- Vault validates the JWT against HCP Terraform's OIDC endpoint and issues a temporary access token
-- The temporary token is used to read secrets and then automatically revoked
-
-### 4. VCS Integration
-- Repository: `dorinahashicorp/vault-enterprise`
-- Branch: `main`
-- Working Directory: `/` (root of repository)
-- Webhook: GitHub → Terraform Cloud (auto-created by OAuth connection)
-
-## Configuration Variables
+## HCP Terraform Workspace Configuration
 
 ### Required Variables
-- `vault_fqdn` - FQDN for the Vault cluster (used in TLS SAN)
-  - Example: `vault.example.com`
+
+Add these **sensitive** variables to your `vault-enterprise` workspace:
+
+| Variable | Type | Description | How to Add |
+|----------|------|-------------|------------|
+| `vault_fqdn` | string | ✅ Already set | `vault.infragoose.com` |
+| `vault_license` | string (sensitive) | Content of your `.hclic` file | Copy entire file content |
+| `vault_tls_cert` | string (sensitive) | TLS certificate (PEM) | Copy entire cert file |
+| `vault_tls_key` | string (sensitive) | TLS private key (PEM) | Copy entire key file |
+| `vault_ca_bundle` | string (sensitive) | CA bundle (PEM) | Copy entire CA bundle |
+
+**How to add sensitive variables in HCP Terraform:**
+1. Go to your workspace → Variables
+2. Click "Add variable"
+3. Select "Terraform variable"
+4. Enter variable name (e.g., `vault_license`)
+5. Paste the entire file content into the value field
+6. Check "Sensitive" checkbox
+7. Click "Save variable"
 
 ### Optional Variables
-- `aws_region` - AWS region (default: `us-east-1`)
-- `resource_name_prefix` - Resource naming prefix (default: `demo-vault`)
-- `net_vpc_id` - Existing VPC ID (leave empty to create demo VPC)
-- `net_vault_subnet_ids` - Existing subnets for Vault instances (leave empty for demo)
-- `net_lb_subnet_ids` - Existing subnets for load balancer (leave empty for demo)
-- `vault_seal_awskms_key_arn` - Existing KMS key ARN (leave empty to create demo key)
-- `resource_tags` - Map of tags for AWS resources
 
-## How to Deploy
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `aws_region` | `us-east-1` | AWS region |
+| `environment` | `prod` | Environment name |
+| `resource_name_prefix` | `vault` | Prefix for resource names |
+| `vpc_cidr` | `10.0.0.0/16` | VPC CIDR block |
+| `vault_version` | `1.18.2+ent` | Vault version |
+| `asg_node_count` | `6` | Number of Vault nodes |
+| `vm_instance_type` | `m7i.large` | EC2 instance type |
+| `load_balancing_scheme` | `INTERNAL` | Load balancer type (INTERNAL or EXTERNAL) |
+| `kms_deletion_window` | `10` | KMS key deletion window (days) |
 
-### Step 1: Verify Configuration
-In HCP Terraform workspace settings:
-1. Confirm VCS integration is enabled
-2. Verify both variable sets are attached to the workspace
-3. Ensure working directory is set correctly
+## Deployment Steps
 
-### Step 2: Queue a Plan
-```
-git push origin main  # Automatically triggers a plan in HCP Terraform
-# OR manually queue in HCP Terraform UI
-```
+### 1. Initialize Terraform
 
-### Step 3: Review the Plan
-In HCP Terraform:
-1. Review the proposed changes (3 EC2 instances, NLB, KMS key, security groups)
-2. Verify all secrets were successfully retrieved from HCP Vault
-3. Check resource naming and sizing
-
-### Step 4: Apply
-Click "Confirm & Apply" in HCP Terraform UI
-
-### Step 5: Monitor Deployment
-- Watch EC2 instances launch in AWS
-- Monitor auto-unseal KMS key usage
-- Wait for load balancer to become healthy (5-10 minutes)
-
-## Post-Deployment
-
-### Accessing Vault
-After deployment, outputs provide:
-- `vault_lb_dns_name` - Load balancer DNS (use for VAULT_ADDR)
-- `vault_cli_env` - Environment variable suggestions
-
-Example:
-```bash
-export VAULT_ADDR=https://demo-vault-nlb-xxxxx.elb.us-east-1.amazonaws.com:8200
-vault status
-```
-
-### Cluster Health Checks
-```bash
-# Check seal status
-vault status
-
-# List cluster members
-vault operator raft list-peers
-
-# Verify auto-unseal is active
-vault read sys/seal-status
-
-# Check JWT auth method configuration
-vault read auth/jwt/config
-
-# Verify JWT role is configured
-vault read auth/jwt/role/tfc-role
-```
-
-### HA Testing
-- Kill one Vault node → Cluster continues (2 nodes remain)
-- Kill second node → Cluster degrades (1 node, no quorum for writes)
-- Recover nodes → Auto-rejoin cluster
-
-## Scaling & Customization
-
-### Adding More Nodes
-Edit `main.tf`:
-```hcl
-asg_node_count = 5  # Change from 3 to desired count
-```
-
-### Using Larger Instances
-Edit `main.tf`:
-```hcl
-vm_instance_type = "t3.xlarge"  # Change from t3.medium
-```
-
-### Using Existing Infrastructure
-Provide variable values:
-```hcl
-net_vpc_id           = "vpc-xxxxx"
-net_vault_subnet_ids = ["subnet-1", "subnet-2", "subnet-3"]
-net_lb_subnet_ids    = ["subnet-4", "subnet-5", "subnet-6"]
-vault_seal_awskms_key_arn = "arn:aws:kms:..."
-```
-
-## Best Practices Applied
-
-✅ **Secrets Management**
-- No credentials in code or state
-- All secrets sourced from HCP Vault via JWT workload identity
-- Sensitive variables marked in TFC
-- Passwordless authentication (no static secrets to manage)
-
-✅ **Authentication (JWT Workload Identity)**
-- Zero-trust architecture using cryptographic signatures
-- Automatic token generation and lifecycle management by HCP Terraform
-- Short-lived tokens (20-minute TTL) minimize exposure
-- Workspace identity binding ensures run context isolation
-- HCP Terraform handles token renewal and revocation
-
-✅ **High Availability**
-- 3-node Raft cluster (minimum for HA)
-- Multi-AZ deployment
-- Network Load Balancer for distribution
-- Auto-unseal to handle unsealing automatically
-
-✅ **Security**
-- TLS encryption (certificates from Vault)
-- KMS encryption for auto-unseal
-- Security groups restrict network access
-- Sensitive data in encrypted remote state (TFC)
-- JWT validation prevents unauthorized access
-
-✅ **Infrastructure as Code**
-- Terraform modules from HashiCorp Registry
-- Version constraints for reproducibility
-- Clean variable design with sensible defaults
-- Documented outputs for operational use
-- Dynamic provider credentials eliminate static secret management
-
-## Troubleshooting
-
-### "Module not installed" Error
 ```bash
 terraform init
 ```
 
-### JWT Authentication Failures
-- Verify `TFC_VAULT_PROVIDER_AUTH` is set to `true` in the workspace
-- Confirm `TFC_VAULT_ADDR` matches your Vault cluster address
-- Check `TFC_VAULT_NAMESPACE` is set to `admin`
-- Verify `TFC_VAULT_RUN_ROLE` is set to `tfc-role`
-- Ensure HCP Terraform has outbound HTTPS access to:
-  - Your Vault cluster
-  - `https://app.terraform.io` (for OIDC discovery)
+This will:
+- Connect to your HCP Terraform workspace
+- Download required providers and modules
 
-### JWT Token File Not Found
-- This means HCP Terraform did not generate the JWT token
-- Verify `TFC_VAULT_PROVIDER_AUTH=true` is set
-- Check HCP Terraform logs in the run output
-- Confirm all `TFC_VAULT_*` variables are configured
-
-### Vault Nodes Not Becoming Healthy
-- Check EC2 instance security groups (allow port 8200, 8201)
-- Verify KMS key permissions for EC2 role
-- Check VPC network ACLs allow traffic between subnets
-
-### JWT Token File Not Found
-- This means HCP Terraform did not generate the JWT token
-- Verify `TFC_VAULT_PROVIDER_AUTH=true` is set in workspace variables
-- Check HCP Terraform logs in the run output for credential errors
-- Confirm all `TFC_VAULT_*` environment variables are configured
-
-### JWT Authentication Failures in Terraform Run
-- Verify `TFC_VAULT_ADDR` is reachable from HCP Terraform
-- Confirm `TFC_VAULT_NAMESPACE` is set to `admin`
-- Check `TFC_VAULT_RUN_ROLE` is set to `tfc-role`
-- Verify workspace identity pattern matches:
-  - `organization:Infragoose:project:*:workspace:vault-enterprise:run_phase:*`
-- Review Vault audit logs: `vault audit list -namespace=admin`
-- Test JWT role locally: `vault write auth/jwt/role/tfc-role -namespace=admin`
-
-### TLS Certificate Issues
-- Verify `server_cert` and `server_key` are valid PEM format
-- Check `ca_cert` contains full CA chain
-- Ensure `vault_fqdn` matches certificate SANs
-
-## Destroying Resources
-
-⚠️ **Warning**: This will destroy all Vault Enterprise infrastructure
+### 2. Plan Deployment
 
 ```bash
-# Via HCP Terraform UI:
-# 1. Queue destroy run
-# 2. Confirm when prompted
-
-# Or via CLI:
-terraform destroy
+terraform plan
 ```
 
-Note: Vault state (Raft storage) is stored on EC2 instance volumes. Destroying the infrastructure also destroys the state.
+Review the plan carefully. Terraform will create approximately 40-50 resources including:
+- VPC, subnets, route tables, internet gateway, NAT gateways
+- KMS key for auto-unseal
+- AWS Secrets Manager secrets (from your HCP Terraform variables)
+- VPC endpoints for AWS services
+- Vault cluster (6 EC2 instances, ASG, ALB, security groups, IAM roles)
 
-## References
+### 3. Apply Configuration
 
-- [Vault Enterprise Documentation](https://www.vaultproject.io/docs/enterprise)
-- [HashiCorp Vault Enterprise HVD Module](https://registry.terraform.io/modules/hashicorp/vault-enterprise-hvd/aws)
-- [Vault JWT Authentication](https://www.vaultproject.io/docs/auth/jwt)
-- [HCP Terraform Dynamic Credentials with Vault](https://developer.hashicorp.com/terraform/cloud-docs/dynamic-provider-credentials/vault-configuration)
-- [HCP Terraform Workload Identity](https://developer.hashicorp.com/terraform/cloud-docs/workloads/identity)
-- [HCP Terraform Documentation](https://developer.hashicorp.com/terraform/cloud-docs)
-- [HCP Vault Dedicated Documentation](https://cloud.hashicorp.com/docs/vault/dedicated)
+```bash
+terraform apply
+```
 
-## Learning Goals
+Type `yes` when prompted. The deployment will take approximately 10-15 minutes.
 
-This project demonstrates:
-- ✅ Vault Enterprise deployment architecture
-- ✅ Multi-cloud secrets orchestration (Vault + AWS)
-- ✅ IaC best practices with Terraform
-- ✅ JWT workload identity authentication (passwordless)
-- ✅ HCP Terraform dynamic provider credentials
-- ✅ HA cluster design with Raft
-- ✅ Auto-unseal implementation
-- ✅ Integration with HCP Terraform
-- ✅ Network isolation and security groups
+### 4. Verify Deployment
+
+After deployment completes, Terraform will output important information:
+
+```bash
+terraform output
+```
+
+Key outputs:
+- `vault_lb_dns_name` - Load balancer DNS name
+- `vault_api_url` - Vault API URL
+- `kms_key_arn` - KMS key for auto-unseal
+- `vpc_id` - VPC ID
+- `next_steps` - Post-deployment instructions
+
+### 5. Create DNS Record
+
+Create a DNS record pointing to the load balancer:
+
+**If using Route 53:**
+```bash
+# Get the load balancer DNS name and zone ID from outputs
+LB_DNS=$(terraform output -raw vault_lb_dns_name)
+LB_ZONE=$(terraform output -raw vault_lb_zone_id)
+
+# Create Route53 ALIAS record (replace YOUR_ZONE_ID with your Route53 zone ID)
+aws route53 change-resource-record-sets \
+  --hosted-zone-id YOUR_ZONE_ID \
+  --change-batch '{
+    "Changes": [{
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "vault.infragoose.com",
+        "Type": "A",
+        "AliasTarget": {
+          "HostedZoneId": "'$LB_ZONE'",
+          "DNSName": "'$LB_DNS'",
+          "EvaluateTargetHealth": true
+        }
+      }
+    }]
+  }'
+```
+
+**If using other DNS providers:**
+- Create a CNAME record
+- Name: `vault.infragoose.com`
+- Value: Use the `vault_lb_dns_name` output
+
+### 6. Initialize Vault Cluster
+
+Wait for DNS to propagate (check with `dig vault.infragoose.com`), then initialize Vault:
+
+```bash
+export VAULT_ADDR="https://vault.infragoose.com:8200"
+vault operator init
+```
+
+**CRITICAL**: Save the unseal keys and root token securely! You won't be able to recover them later.
+
+Example output:
+```
+Unseal Key 1: ...
+Unseal Key 2: ...
+Unseal Key 3: ...
+Unseal Key 4: ...
+Unseal Key 5: ...
+
+Initial Root Token: ...
+```
+
+### 7. Verify Cluster Status
+
+The cluster should auto-unseal using AWS KMS:
+
+```bash
+vault status
+```
+
+Expected output:
+```
+Sealed          false
+Total Shares    5
+Threshold       3
+...
+```
+
+### 8. Access Vault UI
+
+Navigate to: `https://vault.infragoose.com:8200/ui`
+
+Login with the root token from step 6.
+
+## Post-Deployment Configuration
+
+### Enable Audit Logging
+
+```bash
+export VAULT_TOKEN="<your-root-token>"
+
+vault audit enable file file_path=/opt/vault/audit/audit.log
+```
+
+### Configure Authentication
+
+```bash
+# Example: Enable userpass authentication
+vault auth enable userpass
+
+# Create an admin user
+vault write auth/userpass/users/admin \
+  password="secure-password" \
+  policies="admin"
+```
+
+### Create Admin Policy
+
+```bash
+vault policy write admin - <<EOF
+# Full access to all paths
+path "*" {
+  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+}
+EOF
+```
+
+### Setup Automated Snapshots (Optional)
+
+If you want automated Raft snapshots to S3:
+
+1. Create an S3 bucket:
+```bash
+aws s3 mb s3://vault-snapshots-infragoose --region us-east-1
+```
+
+2. Add the bucket ARN to your HCP Terraform workspace:
+```
+vault_snapshots_bucket_arn = "arn:aws:s3:::vault-snapshots-infragoose"
+```
+
+3. Run `terraform apply` again
+
+4. Configure snapshot automation in Vault:
+```bash
+vault write sys/storage/raft/snapshot-auto/config \
+  interval="1h" \
+  retain=24 \
+  storage_type="aws-s3" \
+  aws_s3_bucket="vault-snapshots-infragoose" \
+  aws_s3_region="us-east-1"
+```
+
+## Rotating Secrets
+
+### Rotating TLS Certificates
+
+1. Update the `vault_tls_cert`, `vault_tls_key`, and `vault_ca_bundle` variables in HCP Terraform workspace
+2. Run `terraform apply`
+3. Terraform will update the AWS Secrets Manager secrets
+4. The Auto Scaling Group will perform rolling updates to replace instances
+
+### Rotating Vault License
+
+1. Update the `vault_license` variable in HCP Terraform workspace
+2. Run `terraform apply`
+3. New license will be deployed with instance refresh
+
+## Cost Optimization
+
+This deployment includes several cost optimizations:
+
+1. **VPC Endpoints**: Reduce NAT Gateway data transfer costs for AWS service API calls
+2. **NAT Gateway per AZ**: High availability while minimizing costs
+3. **GP3 EBS volumes**: Better performance-to-cost ratio than GP2
+4. **Right-sized instances**: m7i.large provides good performance for most workloads
+
+### Estimated Monthly Costs (us-east-1)
+
+- **EC2 Instances**: 6 × m7i.large × $0.1008/hr = ~$436/month
+- **EBS Volumes**: 6 × 180 GB = ~$108/month
+- **Application Load Balancer**: ~$23/month
+- **NAT Gateways**: 3 × $32.40 = ~$97/month
+- **Secrets Manager**: 4 secrets × $0.40 = ~$2/month
+- **Data Transfer**: Variable based on usage
+- **VPC Endpoints**: ~$22/month (3 interface endpoints)
+
+**Total**: ~$688/month (excluding data transfer)
+
+## Scaling
+
+### Vertical Scaling (Larger Instances)
+
+Update the instance type in HCP Terraform workspace:
+```
+vm_instance_type = "m7i.xlarge"  # 4 vCPU, 16 GB RAM
+```
+
+Run `terraform apply`. Nodes will be replaced one at a time.
+
+### Horizontal Scaling (More Nodes)
+
+Update the node count (must be odd for Raft):
+```
+asg_node_count = 9
+```
+
+Run `terraform apply`.
+
+## Security Best Practices
+
+### Variable Security
+
+- ✅ All sensitive variables (license, certs, keys) are marked as sensitive in Terraform
+- ✅ HCP Terraform encrypts sensitive variables at rest
+- ✅ Sensitive values never appear in logs or outputs
+- ✅ AWS Secrets Manager provides additional encryption layer
+
+### Operational Security
+
+- All secrets are stored in AWS Secrets Manager (not in Terraform state)
+- TLS encryption is enforced for all communication
+- Auto-unseal uses AWS KMS for enhanced security
+- All EBS volumes are encrypted
+- Vault nodes are in private subnets (not directly internet-accessible)
+- Security groups follow principle of least privilege
+- KMS key rotation is enabled
+- VPC endpoints reduce exposure to internet
+
+## Disaster Recovery
+
+### Manual Snapshot
+
+```bash
+vault operator raft snapshot save backup.snap
+```
+
+### Restore from Snapshot
+
+```bash
+vault operator raft snapshot restore backup.snap
+```
+
+### Multi-Region DR
+
+For production deployments, consider:
+1. Deploy a secondary cluster in another region
+2. Enable Performance Replication (Vault Enterprise feature)
+3. Configure automated failover
+
+## Troubleshooting
+
+### Vault nodes not joining cluster
+
+Check security groups:
+```bash
+aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=*vault*" \
+  --query 'SecurityGroups[*].[GroupId,GroupName]' \
+  --output table
+```
+
+Ensure ports 8200 and 8201 are open between Vault nodes.
+
+### Auto-unseal failing
+
+Verify KMS permissions:
+```bash
+# Get the IAM role ARN
+ROLE_ARN=$(terraform output -raw vault_instance_role_arn)
+
+# Check KMS key policy
+KMS_KEY_ID=$(terraform output -raw kms_key_arn)
+aws kms get-key-policy --key-id $KMS_KEY_ID --policy-name default
+```
+
+### TLS certificate errors
+
+Verify the certificate matches the FQDN:
+```bash
+openssl s_client -connect vault.infragoose.com:8200 -showcerts
+```
+
+### DNS not resolving
+
+Check DNS propagation:
+```bash
+dig vault.infragoose.com
+nslookup vault.infragoose.com
+```
+
+### Secrets Manager issues
+
+Verify secrets were created:
+```bash
+aws secretsmanager list-secrets \
+  --filters Key=name,Values=vault \
+  --query 'SecretList[*].[Name,ARN]' \
+  --output table
+```
+
+## Maintenance
+
+### Updating Vault Version
+
+1. Update `vault_version` variable in HCP Terraform workspace
+2. Run `terraform apply`
+3. The Auto Scaling Group will perform rolling updates
+
+### Patching EC2 Instances
+
+The ASG will automatically replace instances based on launch template changes.
+
+## Resources
+
+- [HashiCorp Vault Documentation](https://developer.hashicorp.com/vault)
+- [Vault Enterprise HVD Module](https://registry.terraform.io/modules/hashicorp/vault-enterprise-hvd/aws)
+- [Vault Reference Architecture](https://developer.hashicorp.com/vault/tutorials/day-one-raft/raft-reference-architecture)
+- [Vault Deployment Guide](https://developer.hashicorp.com/vault/tutorials/day-one-raft/raft-deployment-guide)
+- [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/)
 
 ## Support
 
-For issues:
-1. Check this README's Troubleshooting section
-2. Review HCP Terraform run logs in the UI
-3. Check AWS CloudWatch for instance logs
-4. Verify Vault cluster health with `vault status`
+- **Module Issues**: [GitHub Issues](https://github.com/hashicorp/terraform-aws-vault-enterprise-hvd/issues)
+- **Vault Questions**: [HashiCorp Discuss](https://discuss.hashicorp.com/c/vault)
+- **Enterprise Support**: Contact your HashiCorp account team
+
+## License
+
+This configuration is provided as-is. The Vault Enterprise software requires a valid license from HashiCorp.

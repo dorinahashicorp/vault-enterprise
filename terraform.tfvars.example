@@ -1,98 +1,140 @@
-# Vault Enterprise HVD Terraform Variables
-# ==========================================
+################################################################################
+# Example Terraform Variables
 #
-# DEPLOYMENT WORKFLOW
-# ===================
-# Step 1: Apply prerequisites.tf to create VPC, KMS, and related infrastructure
-#         cd to workspace directory and run:
-#         terraform apply -var-file=terraform.tfvars
+# This file shows example values for variables.
+# DO NOT use this file directly - set these in HCP Terraform workspace instead.
 #
-# Step 2: Create Secrets Manager secrets manually (using AWS CLI or AWS Console)
-#         BEFORE running terraform apply for the main configuration
-#
-#         Example AWS CLI commands:
-#         aws secretsmanager create-secret \
-#           --name vault-license \
-#           --secret-string file://vault.hclic
-#
-#         aws secretsmanager create-secret \
-#           --name vault-tls-cert \
-#           --secret-string file://cert.pem
-#
-#         aws secretsmanager create-secret \
-#           --name vault-tls-key \
-#           --secret-string file://key.pem
-#
-#         aws secretsmanager create-secret \
-#           --name vault-ca-cert \
-#           --secret-string file://ca.pem
-#
-# Step 3: Record the ARNs of the 4 secrets you created and fill in values below
-#
-# Step 4: Run terraform apply to deploy Vault Enterprise
+# IMPORTANT: All infrastructure (VPC, subnets, KMS, Secrets Manager) is
+# automatically created. You only need to provide your license and TLS certs
+# as HCP Terraform workspace variables.
+################################################################################
 
-#==============================================================================
-# From Prerequisites Outputs
-#==============================================================================
-# Copy these values from: terraform output -json prerequisites_summary
+#------------------------------------------------------------------------------
+# General Configuration (Optional - has defaults)
+#------------------------------------------------------------------------------
 
-# VPC and Subnets (created by prerequisites.tf)
-vpc_id = "vpc-xxxxxxxxx"  # Example: vpc-0a1b2c3d4e5f6g7h8
+aws_region           = "us-east-1"
+environment          = "prod"
+resource_name_prefix = "infragoose-vault"
 
-vault_subnet_ids = [
-  "subnet-xxxxxxxxx",  # Private subnet 1 (AZ 0)
-  "subnet-yyyyyyyyy",  # Private subnet 2 (AZ 1)
-  "subnet-zzzzzzzzz"   # Private subnet 3 (AZ 2)
-]
+#------------------------------------------------------------------------------
+# Network Configuration (Optional - auto-created with defaults)
+#------------------------------------------------------------------------------
 
-lb_subnet_ids = [
-  "subnet-aaaaaaaaa",  # Public subnet 1 (AZ 0)
-  "subnet-bbbbbbbbb",  # Public subnet 2 (AZ 1)
-  "subnet-ccccccccc"   # Public subnet 3 (AZ 2)
-]
+vpc_cidr = "10.0.0.0/16" # Default VPC CIDR
 
-# KMS Key (created by prerequisites.tf)
-kms_key_id = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+#------------------------------------------------------------------------------
+# Vault FQDN - REQUIRED
+# You already have this set in your HCP Terraform workspace
+#------------------------------------------------------------------------------
 
-#==============================================================================
-# Secrets Manager ARNs
-#==============================================================================
-# You must create these 4 secrets in AWS Secrets Manager BEFORE running
-# terraform apply. Use the AWS CLI commands shown above.
-#
-# After creating secrets, record their ARNs and enter them below:
+vault_fqdn = "vault.infragoose.com"
 
-vault_license_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-license-xxxxx"
-vault_tls_cert_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-tls-cert-xxxxx"
-vault_tls_key_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-tls-key-xxxxx"
-vault_ca_cert_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:vault-ca-cert-xxxxx"
+#------------------------------------------------------------------------------
+# Vault License and TLS Certificates - REQUIRED (SENSITIVE)
+# Add these as SENSITIVE variables in HCP Terraform workspace
+# DO NOT add these to terraform.tfvars - use the HCP Terraform UI instead
+#------------------------------------------------------------------------------
 
-#==============================================================================
-# Vault Configuration
-#==============================================================================
+# vault_license = <<-EOT
+#   (entire content of your .hclic file)
+# EOT
 
-friendly_name_prefix = "vault"
-vault_version        = "1.17.0"
-node_count           = 3
-instance_type        = "t3.large"
-vault_fqdn           = "vault.example.com"
+# vault_tls_cert = <<-EOT
+#   -----BEGIN CERTIFICATE-----
+#   (your TLS certificate in PEM format)
+#   (include full certificate chain)
+#   -----END CERTIFICATE-----
+# EOT
 
-#==============================================================================
-# Network Access
-#==============================================================================
+# vault_tls_key = <<-EOT
+#   -----BEGIN PRIVATE KEY-----
+#   (your TLS private key in PEM format)
+#   -----END PRIVATE KEY-----
+# EOT
 
-# CIDR blocks allowed to access Vault API via load balancer
-ingress_cidr_blocks = ["0.0.0.0/0"]
+# vault_ca_bundle = <<-EOT
+#   -----BEGIN CERTIFICATE-----
+#   (your CA certificate bundle in PEM format)
+#   -----END CERTIFICATE-----
+# EOT
 
-# CIDR blocks allowed SSH access to Vault instances (empty = disabled)
-ingress_ssh_cidr_blocks = []
+#------------------------------------------------------------------------------
+# KMS Configuration (Optional - auto-created)
+# KMS key for auto-unseal is automatically created by infrastructure.tf
+#------------------------------------------------------------------------------
 
-#==============================================================================
-# Resource Tags
-#==============================================================================
+kms_deletion_window = 10 # Days before KMS key is permanently deleted
 
-resource_tags = {
-  Environment = "production"
-  ManagedBy   = "terraform"
-  CostCenter  = "engineering"  # Adjust as needed
+#------------------------------------------------------------------------------
+# Vault Configuration (Optional - showing defaults)
+#------------------------------------------------------------------------------
+
+vault_version  = "1.18.2+ent"
+asg_node_count = 6 # 6 nodes for high availability
+
+vm_instance_type = "m7i.large" # 2 vCPU, 8 GB RAM
+
+vault_default_lease_ttl_duration = "1h"
+vault_max_lease_ttl_duration     = "768h"
+
+vault_port_api     = "8200"
+vault_port_cluster = "8201"
+
+load_balancing_scheme = "INTERNAL" # Use "EXTERNAL" for public access
+
+vault_raft_performance_multiplier = 5
+
+#------------------------------------------------------------------------------
+# Storage Configuration (Optional - showing defaults)
+#------------------------------------------------------------------------------
+
+vm_boot_disk_configuration = {
+  volume_type = "gp3"
+  volume_size = 30
+  encrypted   = true
 }
+
+vm_vault_data_disk_configuration = {
+  volume_type = "gp3"
+  volume_size = 100
+  iops        = 3000
+  throughput  = 125
+  encrypted   = true
+}
+
+vm_vault_audit_disk_configuration = {
+  volume_type = "gp3"
+  volume_size = 50
+  encrypted   = true
+}
+
+# Optional: S3 bucket for automated Raft snapshots
+# vault_snapshots_bucket_arn = "arn:aws:s3:::vault-snapshots-infragoose"
+
+#------------------------------------------------------------------------------
+# Additional Tags (Optional)
+#------------------------------------------------------------------------------
+
+common_tags = {
+  Owner      = "Platform Team"
+  CostCenter = "Engineering"
+  Compliance = "Required"
+}
+
+################################################################################
+# HOW TO ADD SENSITIVE VARIABLES IN HCP TERRAFORM:
+#
+# 1. Go to your workspace → Variables
+# 2. Click "Add variable"
+# 3. Select "Terraform variable"
+# 4. Enter variable name (e.g., "vault_license")
+# 5. Paste the entire file content into the value field
+# 6. CHECK THE "Sensitive" CHECKBOX ← IMPORTANT!
+# 7. Click "Save variable"
+# 8. Repeat for all 4 sensitive variables:
+#    - vault_license
+#    - vault_tls_cert
+#    - vault_tls_key
+#    - vault_ca_bundle
+################################################################################
