@@ -112,16 +112,6 @@ vm_vault_audit_disk_configuration = {
 # Optional: S3 bucket for automated Raft snapshots
 # vault_snapshots_bucket_arn = "arn:aws:s3:::vault-snapshots-infragoose"
 
-#------------------------------------------------------------------------------
-# Additional Tags (Optional)
-#------------------------------------------------------------------------------
-
-common_tags = {
-  Owner      = "Platform Team"
-  CostCenter = "Engineering"
-  Compliance = "Required"
-}
-
 ################################################################################
 # HOW TO ADD SENSITIVE VARIABLES IN HCP TERRAFORM:
 #

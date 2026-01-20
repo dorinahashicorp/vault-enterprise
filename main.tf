@@ -75,14 +75,4 @@ module "vault_enterprise_hvd" {
 
   # Optional Snapshots Bucket
   vault_snapshots_bucket_arn = var.vault_snapshots_bucket_arn
-
-  # Additional Tags
-  common_tags = merge(
-    var.common_tags,
-    {
-      Environment = var.environment
-      ManagedBy   = "terraform"
-      Module      = "vault-enterprise-hvd"
-    }
-  )
 }

@@ -197,12 +197,3 @@ variable "vault_snapshots_bucket_arn" {
   default     = null
 }
 
-################################################################################
-# Additional Tags - Optional
-################################################################################
-
-variable "common_tags" {
-  description = "Additional tags to apply to all resources"
-  type        = map(string)
-  default     = {}
-}
