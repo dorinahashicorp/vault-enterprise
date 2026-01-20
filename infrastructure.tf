@@ -5,9 +5,9 @@
 locals {
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 3)
 
-  vpc_cidr           = var.vpc_cidr
-  private_subnets    = [for i, az in local.availability_zones : cidrsubnet(local.vpc_cidr, 4, i)]
-  public_subnets     = [for i, az in local.availability_zones : cidrsubnet(local.vpc_cidr, 4, i + 3)]
+  vpc_cidr        = var.vpc_cidr
+  private_subnets = [for i, az in local.availability_zones : cidrsubnet(local.vpc_cidr, 4, i)]
+  public_subnets  = [for i, az in local.availability_zones : cidrsubnet(local.vpc_cidr, 4, i + 3)]
 }
 
 ################################################################################
@@ -273,31 +273,3 @@ resource "aws_kms_alias" "vault_unseal" {
   target_key_id = aws_kms_key.vault_unseal.key_id
 }
 
-################################################################################
-# Outputs for use in main Vault module
-################################################################################
-
-output "vpc_id" {
-  description = "VPC ID"
-  value       = aws_vpc.vault.id
-}
-
-output "private_subnet_ids" {
-  description = "Private subnet IDs for Vault nodes"
-  value       = aws_subnet.private[*].id
-}
-
-output "public_subnet_ids" {
-  description = "Public subnet IDs for load balancer"
-  value       = aws_subnet.public[*].id
-}
-
-output "kms_key_arn" {
-  description = "KMS key ARN for Vault auto-unseal"
-  value       = aws_kms_key.vault_unseal.arn
-}
-
-output "availability_zones" {
-  description = "Availability zones used"
-  value       = local.availability_zones
-}

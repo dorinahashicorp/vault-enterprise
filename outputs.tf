@@ -27,6 +27,11 @@ output "kms_key_alias" {
   value       = aws_kms_alias.vault_unseal.name
 }
 
+output "availability_zones" {
+  description = "Availability zones used for deployment"
+  value       = slice(data.aws_availability_zones.available.names, 0, 3)
+}
+
 ################################################################################
 # Vault Cluster Outputs
 ################################################################################
@@ -105,14 +110,14 @@ output "vault_instance_profile_arn" {
 output "deployment_info" {
   description = "Important information about the Vault deployment"
   value = {
-    cluster_size      = var.asg_node_count
-    instance_type     = var.vm_instance_type
-    vault_version     = var.vault_version
-    load_balancer     = var.load_balancing_scheme
-    auto_unseal       = "Enabled (AWS KMS)"
-    region            = var.aws_region
-    environment       = var.environment
-    vpc_cidr          = var.vpc_cidr
+    cluster_size  = var.asg_node_count
+    instance_type = var.vm_instance_type
+    vault_version = var.vault_version
+    load_balancer = var.load_balancing_scheme
+    auto_unseal   = "Enabled (AWS KMS)"
+    region        = var.aws_region
+    environment   = var.environment
+    vpc_cidr      = var.vpc_cidr
   }
 }
 
@@ -122,7 +127,7 @@ output "deployment_info" {
 
 output "next_steps" {
   description = "Post-deployment instructions"
-  value = <<-EOT
+  value       = <<-EOT
 
     Vault Enterprise cluster has been deployed successfully!
 

@@ -27,18 +27,18 @@ module "vault_enterprise_hvd" {
   #-----------------------------------------------------------------------------
 
   # Network Configuration (from infrastructure.tf)
-  net_vpc_id            = aws_vpc.vault.id
-  net_vault_subnet_ids  = aws_subnet.private[*].id
-  net_lb_subnet_ids     = var.load_balancing_scheme == "INTERNAL" ? aws_subnet.private[*].id : aws_subnet.public[*].id
+  net_vpc_id           = aws_vpc.vault.id
+  net_vault_subnet_ids = aws_subnet.private[*].id
+  net_lb_subnet_ids    = var.load_balancing_scheme == "INTERNAL" ? aws_subnet.private[*].id : aws_subnet.public[*].id
 
   # Vault FQDN
   vault_fqdn = var.vault_fqdn
 
   # AWS Secrets Manager ARNs for License and TLS (from secrets.tf)
-  sm_vault_license_arn       = aws_secretsmanager_secret.vault_license.arn
-  sm_vault_tls_cert_arn      = aws_secretsmanager_secret.vault_tls_cert.arn
-  sm_vault_tls_cert_key_arn  = aws_secretsmanager_secret.vault_tls_key.arn
-  sm_vault_tls_ca_bundle     = aws_secretsmanager_secret.vault_ca_bundle.arn
+  sm_vault_license_arn      = aws_secretsmanager_secret.vault_license.arn
+  sm_vault_tls_cert_arn     = aws_secretsmanager_secret.vault_tls_cert.arn
+  sm_vault_tls_cert_key_arn = aws_secretsmanager_secret.vault_tls_key.arn
+  sm_vault_tls_ca_bundle    = aws_secretsmanager_secret.vault_ca_bundle.arn
 
   # KMS Auto-Unseal (from infrastructure.tf)
   vault_seal_awskms_key_arn = aws_kms_key.vault_unseal.arn
