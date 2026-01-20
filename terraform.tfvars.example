@@ -90,23 +90,26 @@ vault_raft_performance_multiplier = 5
 #------------------------------------------------------------------------------
 
 vm_boot_disk_configuration = {
-  volume_type = "gp3"
-  volume_size = 30
-  encrypted   = true
+  volume_type           = "gp3"
+  volume_size           = 30
+  delete_on_termination = true
+  encrypted             = true
 }
 
 vm_vault_data_disk_configuration = {
-  volume_type = "gp3"
-  volume_size = 100
-  iops        = 3000
-  throughput  = 125
-  encrypted   = true
+  volume_type           = "gp3"
+  volume_size           = 100
+  volume_iops           = 3000
+  volume_throughput     = 125
+  delete_on_termination = true
+  encrypted             = true
 }
 
 vm_vault_audit_disk_configuration = {
-  volume_type = "gp3"
-  volume_size = 50
-  encrypted   = true
+  volume_type           = "gp3"
+  volume_size           = 50
+  delete_on_termination = true
+  encrypted             = true
 }
 
 # Optional: S3 bucket for automated Raft snapshots

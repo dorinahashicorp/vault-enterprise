@@ -144,50 +144,52 @@ variable "vault_raft_performance_multiplier" {
 variable "vm_boot_disk_configuration" {
   description = "Boot disk configuration for Vault EC2 instances"
   type = object({
-    volume_type = string
-    volume_size = number
-    iops        = optional(number)
-    throughput  = optional(number)
-    encrypted   = bool
+    volume_type           = string
+    volume_size           = number
+    delete_on_termination = bool
+    encrypted             = bool
   })
   default = {
-    volume_type = "gp3"
-    volume_size = 30
-    encrypted   = true
+    volume_type           = "gp3"
+    volume_size           = 30
+    delete_on_termination = true
+    encrypted             = true
   }
 }
 
 variable "vm_vault_data_disk_configuration" {
   description = "Data disk configuration for Vault storage (Raft)"
   type = object({
-    volume_type = string
-    volume_size = number
-    iops        = optional(number)
-    throughput  = optional(number)
-    encrypted   = bool
+    volume_type           = string
+    volume_size           = number
+    volume_iops           = number
+    volume_throughput     = number
+    delete_on_termination = bool
+    encrypted             = bool
   })
   default = {
-    volume_type = "gp3"
-    volume_size = 100
-    iops        = 3000
-    throughput  = 125
-    encrypted   = true
+    volume_type           = "gp3"
+    volume_size           = 100
+    volume_iops           = 3000
+    volume_throughput     = 125
+    delete_on_termination = true
+    encrypted             = true
   }
 }
 
 variable "vm_vault_audit_disk_configuration" {
   description = "Audit disk configuration for Vault audit logs"
   type = object({
-    volume_type = string
-    volume_size = number
-    iops        = optional(number)
-    throughput  = optional(number)
-    encrypted   = bool
+    volume_type           = string
+    volume_size           = number
+    delete_on_termination = bool
+    encrypted             = bool
   })
   default = {
-    volume_type = "gp3"
-    volume_size = 50
-    encrypted   = true
+    volume_type           = "gp3"
+    volume_size           = 50
+    delete_on_termination = true
+    encrypted             = true
   }
 }
 
