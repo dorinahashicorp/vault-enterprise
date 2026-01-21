@@ -66,8 +66,8 @@ module "vault_enterprise_hvd" {
   load_balancing_scheme = var.load_balancing_scheme
 
   # Network Ingress Configuration
-  net_ingress_vault_cidr_blocks = [var.vpc_cidr] # Allow Vault API access from entire VPC
-  net_ingress_ssh_cidr_blocks   = []              # No direct SSH access (use AWS Systems Manager)
+  net_ingress_vault_cidr_blocks = [var.vpc_cidr]      # Allow Vault API access from entire VPC
+  net_ingress_ssh_cidr_blocks   = ["192.0.2.0/24"]    # Placeholder CIDR (TEST-NET-1, non-routable)
 
   # Raft Configuration
   vault_raft_performance_multiplier = var.vault_raft_performance_multiplier
