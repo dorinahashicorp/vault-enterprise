@@ -69,7 +69,7 @@ module "vault_enterprise_hvd" {
   load_balancing_scheme = var.load_balancing_scheme
 
   # Network Ingress Configuration
-  net_ingress_vault_cidr_blocks = [var.vpc_cidr]      # Allow Vault API access from entire VPC
+  net_ingress_vault_cidr_blocks = ["0.0.0.0/0"]       # Allow Vault API access from internet (external LB)
   net_ingress_ssh_cidr_blocks   = ["192.0.2.0/24"]    # Placeholder CIDR (TEST-NET-1, non-routable)
 
   # Raft Configuration
