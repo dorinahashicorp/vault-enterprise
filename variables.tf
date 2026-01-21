@@ -124,7 +124,7 @@ variable "vault_port_cluster" {
 variable "load_balancing_scheme" {
   description = "Load balancer scheme: INTERNAL (private) or EXTERNAL (public)"
   type        = string
-  default     = "INTERNAL"
+  default     = "EXTERNAL"
   validation {
     condition     = contains(["INTERNAL", "EXTERNAL", "NONE"], var.load_balancing_scheme)
     error_message = "Load balancing scheme must be INTERNAL, EXTERNAL, or NONE."
