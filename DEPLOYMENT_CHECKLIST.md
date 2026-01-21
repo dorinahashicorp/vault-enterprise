@@ -360,7 +360,24 @@ Before considering deployment complete:
 - [ ] Monitoring and alerting configured
 - [ ] On-call team briefed on Vault operations
 - [ ] Emergency procedures documented and tested
-- [ ] Deployment marked as production-ready
+
+### Security Hardening (Required for Production)
+
+⚠️ **The default configuration is optimized for testing/evaluation. Complete ALL items below before production use:**
+
+- [ ] **Load balancer ingress restricted** - Change `net_ingress_vault_cidr_blocks` from `["0.0.0.0/0"]` to specific CIDR blocks
+- [ ] **Load balancer scheme reviewed** - Confirm EXTERNAL vs INTERNAL based on security requirements
+- [ ] **Bastion SSH access restricted** - Change bastion security group from `["0.0.0.0/0"]` to your IP/network
+- [ ] **Bastion host removed** - Delete or comment out `bastion.tf` after initial setup
+- [ ] **KMS deletion window set** - Change `recovery_window_in_days` from 0 to 7-30 days
+- [ ] **Security group rules audited** - All ingress rules follow least-privilege principle
+- [ ] **TLS certificates valid** - Certificates not expired and properly configured
+- [ ] **Root token secured** - Root token stored in secure location (not on local machines)
+- [ ] **Auth methods configured** - Non-root authentication methods enabled (LDAP, OIDC, etc.)
+- [ ] **Audit logging enabled** - Vault audit logs configured and forwarded to centralized logging
+- [ ] **AWS CloudTrail enabled** - API activity logging configured
+- [ ] **Network architecture reviewed** - VPC peering, VPN, or Direct Connect configured if needed
+- [ ] **Deployment marked as production-ready** - Only after completing all security hardening steps above
 
 ---
 

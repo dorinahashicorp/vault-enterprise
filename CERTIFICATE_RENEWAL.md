@@ -11,15 +11,17 @@ Simple, straightforward instructions to renew your Vault TLS certificate every 6
 Open your terminal and run:
 
 ```bash
-sudo certbot renew --cert-name vault.allincruisive.com --force-renewal
+sudo certbot renew --cert-name <YOUR_VAULT_FQDN> --force-renewal
 ```
+
+Replace `<YOUR_VAULT_FQDN>` with your Vault domain (e.g., `vault.example.com`).
 
 **What happens:**
 Certbot will display a DNS challenge. Example:
 
 ```
 Please deploy a DNS TXT record under the name:
-_acme-challenge.vault.allincruisive.com
+_acme-challenge.<YOUR_VAULT_FQDN>
 
 with the following value:
 JoXZAbzxQWNSQDp9G_inF8VWODZbHpNf6OmMqVQL-4s
@@ -31,13 +33,13 @@ Press Enter to Continue
 
 ---
 
-## Step 2: Create DNS TXT Record in GoDaddy
+## Step 2: Create DNS TXT Record
 
-1. Go to https://dcc.godaddy.com/control/allincruisive.com/dns
-2. Click **Add**
+1. Go to your DNS provider's management console
+2. Click **Add** (or equivalent)
 3. Select **TXT** record
 4. Fill in:
-   - **Name**: `_acme-challenge.vault`
+   - **Name**: `_acme-challenge.vault` (or the subdomain shown by certbot)
    - **Value**: Paste the value from certbot (e.g., `JoXZAbzxQWNSQDp9G_inF8VWODZbHpNf6OmMqVQL-4s`)
    - **TTL**: `600 seconds`
 5. Click **Save**
@@ -45,7 +47,7 @@ Press Enter to Continue
 
 **Verify DNS (optional):**
 ```bash
-dig _acme-challenge.vault.allincruisive.com TXT +short
+dig _acme-challenge.<YOUR_VAULT_FQDN> TXT +short
 ```
 
 Back in your terminal, press **Enter**. Certbot will complete the renewal.
@@ -60,13 +62,13 @@ Read the three certificate files:
 
 ```bash
 # Full chain certificate
-sudo cat /etc/letsencrypt/live/vault.allincruisive.com/fullchain.pem
+sudo cat /etc/letsencrypt/live/<YOUR_VAULT_FQDN>/fullchain.pem
 
 # Private key
-sudo cat /etc/letsencrypt/live/vault.allincruisive.com/privkey.pem
+sudo cat /etc/letsencrypt/live/<YOUR_VAULT_FQDN>/privkey.pem
 
 # CA chain
-sudo cat /etc/letsencrypt/live/vault.allincruisive.com/chain.pem
+sudo cat /etc/letsencrypt/live/<YOUR_VAULT_FQDN>/chain.pem
 ```
 
 Select and copy each file's complete content (including `-----BEGIN` and `-----END` lines).
@@ -75,7 +77,7 @@ Select and copy each file's complete content (including `-----BEGIN` and `-----E
 
 ## Step 4: Update HCP Terraform Variables
 
-1. Go to https://app.terraform.io/app/Infragoose/workspaces/vault-enterprise
+1. Go to https://app.terraform.io/app/YOUR_ORG/workspaces/YOUR_WORKSPACE
 2. Click **Variables** tab
 3. Update these three variables:
 
@@ -116,10 +118,10 @@ Vault instances automatically reload with new certificates. **No downtime!**
 
 ## Step 6: Clean Up (Optional)
 
-Delete the temporary TXT record from GoDaddy:
-1. Go to https://dcc.godaddy.com/control/allincruisive.com/dns
+Delete the temporary TXT record from your DNS provider:
+1. Go to your DNS management console
 2. Find TXT record: `_acme-challenge.vault`
-3. Click trash icon → **Save**
+3. Delete the record and save changes
 
 ---
 
@@ -138,8 +140,8 @@ date -d "+60 days"  # Linux
 ## Check Certificate Expiry
 
 ```bash
-echo | openssl s_client -servername vault.allincruisive.com \
-  -connect vault.allincruisive.com:8200 2>/dev/null \
+echo | openssl s_client -servername <YOUR_VAULT_FQDN> \
+  -connect <YOUR_VAULT_FQDN>:8200 2>/dev/null \
   | openssl x509 -noout -dates
 ```
 
@@ -149,9 +151,9 @@ echo | openssl s_client -servername vault.allincruisive.com \
 
 ### DNS Validation Fails
 
-- Verify TXT record in GoDaddy matches certbot's value exactly
+- Verify TXT record in your DNS provider matches certbot's value exactly
 - Wait 2-3 minutes for DNS propagation
-- Use `dig _acme-challenge.vault.allincruisive.com TXT +short` to verify
+- Use `dig _acme-challenge.<YOUR_VAULT_FQDN> TXT +short` to verify
 
 ### Vault Not Using New Certificate
 

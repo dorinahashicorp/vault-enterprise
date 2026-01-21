@@ -1,6 +1,8 @@
 # Vault Enterprise Deployment on AWS
 
-Production-ready Terraform configuration for deploying HashiCorp Vault Enterprise on AWS using the [HashiCorp Validated Design (HVD)](https://registry.terraform.io/modules/hashicorp/vault-enterprise-hvd/aws/latest).
+Terraform configuration for deploying HashiCorp Vault Enterprise on AWS using the [HashiCorp Validated Design (HVD)](https://registry.terraform.io/modules/hashicorp/vault-enterprise-hvd/aws/latest).
+
+> **⚠️ SECURITY NOTICE**: This configuration includes settings optimized for **testing and evaluation purposes**. Before using in production, review and harden security settings as outlined in the [Security Considerations](#security-considerations) section.
 
 ## Architecture Overview
 
@@ -399,27 +401,72 @@ This deployment includes several cost optimizations:
 
 **Total**: ~$688/month (excluding data transfer)
 
-## Security Best Practices
+## Security Considerations
 
-### During Deployment
+### ⚠️ Current Configuration is for Testing/Evaluation
+
+This deployment includes relaxed security settings for ease of testing and development. **DO NOT use in production without the following hardening steps:**
+
+#### Settings That Must Be Changed for Production:
+
+1. **Load Balancer Ingress (`main.tf:72`)**
+   - **Current**: `net_ingress_vault_cidr_blocks = ["0.0.0.0/0"]` - Allows access from anywhere
+   - **Production**: Restrict to specific IP ranges or VPN CIDR blocks
+   ```hcl
+   net_ingress_vault_cidr_blocks = ["10.0.0.0/8", "172.16.0.0/12"]  # Your corporate network ranges
+   ```
+
+2. **Load Balancer Scheme (`variables.tf:127`)**
+   - **Current**: `default = "EXTERNAL"` - Public internet-facing load balancer
+   - **Production**: Consider `INTERNAL` for private-only access or restrict ingress CIDR blocks
+   ```hcl
+   default = "INTERNAL"  # Or use EXTERNAL with strict CIDR restrictions
+   ```
+
+3. **Bastion Host SSH (`bastion.tf:35`)**
+   - **Current**: `cidr_blocks = ["0.0.0.0/0"]` - Allows SSH from anywhere
+   - **Production**: Restrict to your IP address or corporate network
+   ```hcl
+   cidr_blocks = ["YOUR_IP_ADDRESS/32"]  # Replace with your actual IP
+   ```
+
+4. **KMS Deletion Window (`secrets.tf:16`)**
+   - **Current**: `recovery_window_in_days = 0` - Immediate deletion (testing only)
+   - **Production**: Set to 7-30 days for recovery protection
+   ```hcl
+   recovery_window_in_days = 30  # Recommended for production
+   ```
+
+5. **Remove Bastion Host**
+   - The bastion host (`bastion.tf`) is for initial setup only
+   - Delete or comment out `bastion.tf` after Vault initialization
+   - Use AWS Systems Manager Session Manager for emergency access instead
+
+### Security Best Practices
+
+#### During Deployment
 - Mark all sensitive variables as "Sensitive" in HCP Terraform
 - Store Vault license and certificates securely before adding to Terraform
-- Review security group rules before applying
+- Review and restrict all security group rules before applying
+- Use least-privilege IAM policies
 
-### Post-Deployment
+#### Post-Deployment
 - Rotate or revoke root token after configuring other auth methods
 - Enable MFA for admin accounts
 - Configure AWS CloudTrail for API auditing
 - Set up AWS Config for compliance monitoring
 - Enable AWS GuardDuty for threat detection
 - Document disaster recovery procedures
+- Implement regular Raft snapshots to S3
+- Set up monitoring and alerting
 
-### Network Security
-- Internal load balancer keeps Vault private (recommended)
-- Vault instances in private subnets only
-- Security groups follow principle of least privilege
-- VPC endpoints reduce internet exposure
-- All traffic encrypted with TLS
+#### Network Security
+- Use internal load balancer for production (recommended)
+- Keep Vault instances in private subnets only
+- Restrict security group ingress to known CIDR ranges
+- Use VPC endpoints to reduce internet exposure
+- Ensure all traffic is encrypted with TLS
+- Regularly rotate TLS certificates (90-day maximum with Let's Encrypt)
 
 ## Disaster Recovery
 

@@ -49,8 +49,8 @@ vault status
 
 Expected output if Vault is uninitialized:
 ```
-Error checking seal status: Get "https://vault.allincruisive.com:8200/v1/sys/seal-status":
-dial tcp: lookup vault.allincruisive.com: no such host
+Error checking seal status: Get "https://<YOUR_VAULT_FQDN>:8200/v1/sys/seal-status":
+dial tcp: lookup <YOUR_VAULT_FQDN>: no such host
 ```
 
 This is expected if you haven't created the DNS CNAME yet.
@@ -59,7 +59,7 @@ This is expected if you haven't created the DNS CNAME yet.
 
 ```bash
 # Set Vault address to load balancer DNS
-export VAULT_ADDR=https://vault-063f254b96197c1b.elb.us-east-1.amazonaws.com:8200
+export VAULT_ADDR=https://<LOAD_BALANCER_DNS>:8200
 export VAULT_SKIP_VERIFY=1
 
 # Check status
@@ -133,12 +133,12 @@ vault secrets list
 
 Once Vault is working via the load balancer:
 
-1. Go to https://dcc.godaddy.com/control/allincruisive.com/dns
-2. Click **Add**
+1. Go to your DNS provider's management console
+2. Click **Add** (or equivalent)
 3. Select **CNAME** record
 4. Fill in:
-   - **Name**: `vault`
-   - **Value**: `vault-063f254b96197c1b.elb.us-east-1.amazonaws.com`
+   - **Name**: `vault` (or your chosen subdomain)
+   - **Value**: `<LOAD_BALANCER_DNS>` (get from AWS Console or Terraform outputs)
    - **TTL**: `600 seconds` (10 minutes)
 5. Click **Save**
 
@@ -146,7 +146,7 @@ Wait 1-2 minutes for DNS propagation, then test:
 
 ```bash
 # From bastion
-export VAULT_ADDR=https://vault.allincruisive.com:8200
+export VAULT_ADDR=https://<YOUR_VAULT_FQDN>:8200
 vault status
 ```
 
@@ -158,7 +158,7 @@ Once the DNS CNAME is created:
 
 ```bash
 # From your local machine
-export VAULT_ADDR=https://vault.allincruisive.com:8200
+export VAULT_ADDR=https://<YOUR_VAULT_FQDN>:8200
 export VAULT_SKIP_VERIFY=1
 
 vault status
