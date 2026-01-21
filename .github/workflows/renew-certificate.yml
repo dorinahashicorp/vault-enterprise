@@ -1,0 +1,175 @@
+name: Renew Vault TLS Certificate
+
+on:
+  schedule:
+    # Run every 60 days at 3 AM UTC (adjust as needed)
+    - cron: '0 3 */60 * *'
+
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+    inputs:
+      force_renewal:
+        description: 'Force certificate renewal even if not due'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  renew-certificate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y certbot jq
+
+      - name: Configure AWS credentials (if using Route53 for DNS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Check certificate expiry
+        id: check_expiry
+        run: |
+          # Check if certificate is within 30 days of expiry
+          DOMAIN="vault.allincruisive.com"
+
+          # Get certificate from the server
+          CERT_INFO=$(echo | openssl s_client -servername $DOMAIN -connect $DOMAIN:8200 2>/dev/null | openssl x509 -noout -enddate || echo "notAfter=Jan  1 00:00:00 1970 GMT")
+
+          # Extract expiry date
+          EXPIRY_DATE=$(echo "$CERT_INFO" | sed 's/notAfter=//')
+          EXPIRY_EPOCH=$(date -d "$EXPIRY_DATE" +%s 2>/dev/null || echo "0")
+          NOW_EPOCH=$(date +%s)
+          DAYS_UNTIL_EXPIRY=$(( ($EXPIRY_EPOCH - $NOW_EPOCH) / 86400 ))
+
+          echo "Certificate expires in $DAYS_UNTIL_EXPIRY days"
+          echo "days_until_expiry=$DAYS_UNTIL_EXPIRY" >> $GITHUB_OUTPUT
+
+          # Set renewal needed flag
+          if [ $DAYS_UNTIL_EXPIRY -lt 30 ] || [ "${{ inputs.force_renewal }}" == "true" ]; then
+            echo "renewal_needed=true" >> $GITHUB_OUTPUT
+            echo "Certificate renewal needed"
+          else
+            echo "renewal_needed=false" >> $GITHUB_OUTPUT
+            echo "Certificate is still valid for $DAYS_UNTIL_EXPIRY days, skipping renewal"
+          fi
+
+      - name: Renew certificate with certbot
+        if: steps.check_expiry.outputs.renewal_needed == 'true'
+        run: |
+          # Note: This uses DNS challenge which requires manual DNS updates
+          # For full automation, you'd need to use certbot-dns-route53 or similar plugins
+
+          echo "This step requires manual DNS validation for Let's Encrypt"
+          echo "For full automation, consider using certbot-dns-route53 or certbot-dns-cloudflare"
+          echo ""
+          echo "Manual steps:"
+          echo "1. Run: sudo certbot certonly --manual --preferred-challenges dns -d vault.allincruisive.com"
+          echo "2. Update DNS TXT record as instructed by certbot"
+          echo "3. Complete validation"
+
+          # For now, this workflow expects certificates to be pre-renewed
+          # and stored in GitHub secrets or fetched from a secure location
+
+          # If using Route53, you can automate with:
+          # sudo certbot certonly --dns-route53 -d vault.allincruisive.com --non-interactive --agree-tos --email ${{ secrets.CERTBOT_EMAIL }}
+
+      - name: Update HCP Terraform variables
+        if: steps.check_expiry.outputs.renewal_needed == 'true'
+        env:
+          HCP_TERRAFORM_TOKEN: ${{ secrets.HCP_TERRAFORM_TOKEN }}
+          HCP_ORG: "Infragoose"
+          HCP_WORKSPACE: "vault-enterprise"
+        run: |
+          # Get workspace ID
+          WORKSPACE_RESPONSE=$(curl -s \
+            --header "Authorization: Bearer $HCP_TERRAFORM_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$HCP_ORG/workspaces/$HCP_WORKSPACE")
+
+          WORKSPACE_ID=$(echo "$WORKSPACE_RESPONSE" | jq -r '.data.id')
+
+          if [ "$WORKSPACE_ID" == "null" ]; then
+            echo "Error: Could not get workspace ID"
+            exit 1
+          fi
+
+          echo "Workspace ID: $WORKSPACE_ID"
+
+          # Read certificate files (adjust paths as needed)
+          # These would come from certbot output or GitHub secrets
+          FULLCHAIN="${{ secrets.VAULT_TLS_CERT }}"
+          PRIVKEY="${{ secrets.VAULT_TLS_KEY }}"
+          CHAIN="${{ secrets.VAULT_CA_BUNDLE }}"
+
+          # Function to update variable
+          update_variable() {
+            local var_name=$1
+            local var_value=$2
+
+            # Get existing variable ID
+            VARS_RESPONSE=$(curl -s \
+              --header "Authorization: Bearer $HCP_TERRAFORM_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              "https://app.terraform.io/api/v2/workspaces/$WORKSPACE_ID/vars")
+
+            VAR_ID=$(echo "$VARS_RESPONSE" | jq -r ".data[] | select(.attributes.key == \"$var_name\") | .id")
+
+            # Prepare JSON payload
+            JSON_PAYLOAD=$(jq -n \
+              --arg key "$var_name" \
+              --arg value "$var_value" \
+              --arg description "Auto-renewed on $(date +%Y-%m-%d)" \
+              '{
+                data: {
+                  type: "vars",
+                  attributes: {
+                    key: $key,
+                    value: $value,
+                    description: $description,
+                    category: "terraform",
+                    hcl: false,
+                    sensitive: true
+                  }
+                }
+              }')
+
+            if [ "$VAR_ID" != "null" ] && [ -n "$VAR_ID" ]; then
+              # Update existing variable
+              curl -s \
+                --header "Authorization: Bearer $HCP_TERRAFORM_TOKEN" \
+                --header "Content-Type: application/vnd.api+json" \
+                --request PATCH \
+                --data "$JSON_PAYLOAD" \
+                "https://app.terraform.io/api/v2/workspaces/$WORKSPACE_ID/vars/$VAR_ID"
+              echo "✓ Updated $var_name"
+            fi
+          }
+
+          # Update all three certificate variables
+          update_variable "vault_tls_cert" "$FULLCHAIN"
+          update_variable "vault_tls_key" "$PRIVKEY"
+          update_variable "vault_ca_bundle" "$CHAIN"
+
+      - name: Create notification
+        if: steps.check_expiry.outputs.renewal_needed == 'true'
+        run: |
+          echo "✓ Certificate variables updated in HCP Terraform"
+          echo ""
+          echo "Next steps:"
+          echo "1. Go to: https://app.terraform.io/app/Infragoose/workspaces/vault-enterprise"
+          echo "2. Review and apply the changes"
+          echo ""
+          echo "The Vault cluster will seamlessly reload with new certificates."
+
+      - name: Notify if no renewal needed
+        if: steps.check_expiry.outputs.renewal_needed == 'false'
+        run: |
+          echo "Certificate is still valid for ${{ steps.check_expiry.outputs.days_until_expiry }} days"
+          echo "No action needed"
